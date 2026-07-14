@@ -206,3 +206,18 @@ Fix — let the user supply their own TURN (the only viable path for cross-netwo
 Stage Summary:
 - For the user's `gz3hnb1` scenario: open 🔧 TURN, paste a working TURN (e.g. from metered.ca or a self-hosted coturn), save, reload, rejoin — cross-network pairing will then succeed. The Debug console will show `relay` candidates (typ relay) being gathered and `ice:connected` on success.
 - Build clean, lint clean, preview HTTP 200. Pushed `0433c9c` to https://github.com/maivl/trans-any.git main.
+
+---
+Task ID: 10
+Agent: main (Z.ai Code)
+Task: User log again shows JOIN ERROR with turn:0 — make TURN config friendlier so cross-network pairing is achievable.
+
+Work Log:
+- Re-tested 9 public TURN servers (openrelay, relay1.backups.cz, kamisama, siobud, nextcloud, blindspot, twilio, cloudflare, globcom) — all allocate 0 relay candidates (dead/deprecated). Confirmed no free public TURN works; user must supply their own.
+- Rewrote TurnConfigModal: separate URL/Username/Credential inputs (instead of raw JSON), a "Test TURN" button that runs a real RTCPeerConnection ICE gather and reports ✓ "TURN works — N relay candidate(s) allocated" or ✗ "No relay candidates — server unreachable or credentials wrong", a "Why am I here?" amber explainer (JOIN ERROR = cross-network NAT, TURN required), and help links to metered.ca + coturn.
+- onJoinError now auto-opens the TURN modal (so the user is guided to fix immediately) + toast "add a TURN server to pair across networks".
+- Verified: modal fields present, Test TURN correctly reports ✗ for a bad server.
+
+Stage Summary:
+- For the user's kr7mm2 scenario: the JOIN ERROR will now auto-open the TURN modal. Get a TURN (metered.ca free tier or self-hosted coturn), paste URL+creds, click Test TURN to verify relay allocation, Save & reload, rejoin — cross-network pairing will succeed (Debug shows typ relay candidates + ice:connected).
+- Build clean, lint clean, preview HTTP 200. Pushed `bfd2326` to https://github.com/maivl/trans-any.git main.
