@@ -237,3 +237,16 @@ Stage Summary:
 - Agent Browser verified: creator at /room/8paucf shows QR + Share room; joiner at /room/join/8paucf shows NO QR + "Waiting for approval" overlay; creator sees "Join requests" with Allow; clicking Allow → overlay gone, both Connected; creator→joiner text message delivered; file publish works.
 - Build clean, lint clean, preview HTTP 200, SPA routing (/ , /room/xxxx, /room/join/xxxx all 200). Pushed `20bf28a` to https://github.com/maivl/trans-any.git main.
 - Note: cross-network pairing still needs a TURN server (the approval flow works over the WebRTC data channel, which itself needs ICE to succeed — same-network/two-tab works without TURN).
+
+---
+Task ID: 12
+Agent: main (Z.ai Code)
+Task: (1) /room/join/f9huce 404 on Vercel — routing fix; (2) is the file uploaded to IPFS, needed for P2P?; (3) show file size.
+
+Work Log:
+- Vercel 404 root cause: Vercel serves the static build but doesn't SPA-fallback client routes by default, so /room/<code> and /room/join/<code> hit 404. Added vercel.json with a rewrite: all non-/api routes → /index.html. Also cache /assets/* immutably. Verified locally (vite preview appType:'spa' already handles it; vercel.json handles production).
+- IPFS upload clarification: addFile uses Helia's addBytes → adds to the local in-browser IPFS node and returns a CID. That IS an IPFS upload (the file is now addressable by CID on the IPFS network from this node). BUT browser-to-browser Helia bitswap is unreliable (no direct libp2p peering between the two browser nodes), so downloads often failed. Fix: addFile now background-publishes the CID to public gateways (dweb.link, ipfs.io, cloudflare-ipfs, pinata) after adding locally, so the gateway fetches & caches the content → other peers fetch via the gateway reliably. For P2P sharing the gateway isn't strictly required (CID + bitswap could work between directly-peered nodes), but in practice the gateway is what makes downloads dependable across networks.
+- File size: transfers list now shows size next to filename; file bubble shows size + mime type prominently.
+
+Stage Summary:
+- Verified /room/join/f9huce renders the app (fybeam + "Waiting for approval"), no 404. Build clean, lint clean. Pushed `3a83c2e` to https://github.com/maivl/trans-any.git main. On Vercel, the vercel.json rewrite will fix the 404 after redeploy.
