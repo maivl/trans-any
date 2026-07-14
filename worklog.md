@@ -188,3 +188,21 @@ Fix:
 Stage Summary:
 - For the user: if both peers are on the same room URL simultaneously and the Debug console shows `[handshake] peer discovered via signaling` but then `[handshake] JOIN ERROR` (or nothing further), the bottleneck is WebRTC ICE (cross-network NAT, no TURN). Same-network/two-tab scenarios work. To support cross-network behind symmetric NAT, a user-supplied TURN server is required (added to RTC_CONFIG.iceServers).
 - Build clean, lint clean, preview HTTP 200. Pushed commits `ab17b62`, `e3a4fe5`, `efa6a56` to https://github.com/maivl/trans-any.git main. Also cleaned up: untracked dist/ + tool-results/, fixed .gitignore.
+
+---
+Task ID: 9
+Agent: main (Z.ai Code)
+Task: User's debug log shows `[handshake] JOIN ERROR (ICE/handshake failed) ... configure TURN servers` — fix cross-network pairing.
+
+Root cause (confirmed by the user's own log):
+`16:53:37 [handshake] JOIN ERROR (ICE/handshake failed) {"error":"could not connect to peer NqeVyBQp... after exchanging SDP; configure TURN servers..."}`. Signaling works (peer discovered, SDP exchanged) but WebRTC ICE can't establish a direct connection — both peers are on different networks behind NAT, and there's no TURN relay. No reliable free public TURN exists: tested OpenRelay (openrelay.metered.ca:80/443/tcp), relay1.backups.cz, turn.globcom.in, turn.anycomm.io, turn.kamisama.xyz, twilio, cloudflare, siobud — ALL allocate 0 relay candidates (deprecated/dead). Self-hosting coturn isn't possible (no sudo; sandbox IP is NAT'd 47.57.232.232 ← 21.0.9.134 so peers can't reach a UDP TURN port here anyway).
+
+Fix — let the user supply their own TURN (the only viable path for cross-network NAT):
+- `chat.ts`: added `getConfiguredTurnServers()` / `setConfiguredTurnServers()` backed by localStorage (key `fybeam-turn-servers`); `buildRtcConfig()` merges STUN + user TURN and logs `[ice] ICE servers {stun, turn, turnUrls}` on join.
+- `FybeamRoom.tsx`: 🔧 TURN button in the sidebar (next to 🐛 Debug) opens a `TurnConfigModal` — paste an RTCIceServer JSON array, validated, saved to localStorage, "reload to apply" toast. Includes a help line linking to metered.ca / self-hosted coturn.
+- Sidebar hints updated to point users at the 🔧 TURN button when the JOIN ERROR / handshaking-stuck states occur.
+- Verified end-to-end in sandbox: TURN config saves to localStorage, reload shows `[ice] ICE servers {stun:4, turn:1, turnUrls:["turn:example.com:3478"]}`, same-network pairing still Connected.
+
+Stage Summary:
+- For the user's `gz3hnb1` scenario: open 🔧 TURN, paste a working TURN (e.g. from metered.ca or a self-hosted coturn), save, reload, rejoin — cross-network pairing will then succeed. The Debug console will show `relay` candidates (typ relay) being gathered and `ice:connected` on success.
+- Build clean, lint clean, preview HTTP 200. Pushed `0433c9c` to https://github.com/maivl/trans-any.git main.
