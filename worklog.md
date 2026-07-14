@@ -221,3 +221,19 @@ Work Log:
 Stage Summary:
 - For the user's kr7mm2 scenario: the JOIN ERROR will now auto-open the TURN modal. Get a TURN (metered.ca free tier or self-hosted coturn), paste URL+creds, click Test TURN to verify relay allocation, Save & reload, rejoin — cross-network pairing will succeed (Debug shows typ relay candidates + ice:connected).
 - Build clean, lint clean, preview HTTP 200. Pushed `bfd2326` to https://github.com/maivl/trans-any.git main.
+
+---
+Task ID: 11
+Agent: main (Z.ai Code)
+Task: (1) New URL rules: create /room/xxxx, join /room/join/xxxx; (2) creator must approve joiners; (3) joiners don't see the QR; (4) fix file download bug.
+
+Work Log:
+- Routing (path-based): index.tsx parses window.location.pathname — `/room/<code>` = creator, `/room/join/<code>` = joiner, anything else (incl `/`) creates a room and redirects to `/room/<code>`. Added `appType:'spa'` to vite.config so deep links fall back to index.html. buildShareUrl() now returns `/room/join/<code>`. leave → redirect to `/`.
+- Creator approval flow: chat.ts gained `join-request` + `approval` Trystero actions + onJoinRequest/onApproval handlers + sendJoinRequest/sendApproval/removePeer (closes the peer's RTCPeerConnection to kick a denied joiner). FybeamRoom: joiner sends a join-request when onPeerJoin fires and shows a "Waiting for approval" overlay; creator sees a "Join requests" list (Allow/Deny); Allow → adds peer + sends approval + system "joined the room" message; Deny → sends denial + disconnects peer. Joiner: approved → overlay gone, status Connected; denied → "Join request denied" → returns home after 1.8s. onPeerJoin no longer auto-adds peers; approval gates it.
+- Joiner no QR: the "Share room" / QR canvas block is now wrapped in `<Show when={props.isCreator}>`. Verified joiner renders 0 canvases.
+- File download fix: browser-to-browser Helia bitswap is unreliable (the two browser Helia nodes aren't libp2p-peered), so catFile() often hung or failed. Added fetchFile() in ipfs.ts that tries public IPFS gateways first (dweb.link, ipfs.io, cloudflare-ipfs, gateway.pinata.cloud) with streaming progress, then falls back to Helia bitswap. handleDownload uses fetchFile now.
+
+Stage Summary:
+- Agent Browser verified: creator at /room/8paucf shows QR + Share room; joiner at /room/join/8paucf shows NO QR + "Waiting for approval" overlay; creator sees "Join requests" with Allow; clicking Allow → overlay gone, both Connected; creator→joiner text message delivered; file publish works.
+- Build clean, lint clean, preview HTTP 200, SPA routing (/ , /room/xxxx, /room/join/xxxx all 200). Pushed `20bf28a` to https://github.com/maivl/trans-any.git main.
+- Note: cross-network pairing still needs a TURN server (the approval flow works over the WebRTC data channel, which itself needs ICE to succeed — same-network/two-tab works without TURN).
