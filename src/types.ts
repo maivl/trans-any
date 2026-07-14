@@ -38,7 +38,7 @@ export type CallState = 'idle' | 'audio' | 'video'
 
 export type IpfsStatus = 'init' | 'ready' | 'error'
 
-export type ConnStatus = 'disconnected' | 'connecting' | 'connected'
+export type ConnStatus = 'disconnected' | 'connecting' | 'handshaking' | 'connected'
 
 export type Tab = 'files' | 'chat'
 

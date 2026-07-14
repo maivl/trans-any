@@ -37,6 +37,10 @@ export interface ChatHandlers {
   onMessage: (msg: ChatMessage) => void
   onMedia: (peerId: string, media: WireMedia) => void
   onStream: (stream: MediaStream, peerId: string) => void
+  /** Signaling discovered a peer; WebRTC handshake starting (not yet connected). */
+  onPeerHandshake?: (peerId: string) => void
+  /** WebRTC handshake/ICE failed for a peer. */
+  onJoinError?: (details: { error: string; peerId: string }) => void
 }
 
 const APP_ID = 'zai-trystero-p2p-chat-v1'
@@ -81,7 +85,23 @@ export function createChat(
   } as Record<string, unknown>
 
   log.info('chat', 'joining room', { room: profile.room, name: profile.name, relays: RELAY_URLS.length })
-  const room = joinRoom(config as never, profile.room)
+
+  // JoinRoomCallbacks (3rd arg): onPeerHandshake fires when signaling
+  // discovers a peer (before the WebRTC data channel opens); onJoinError fires
+  // when the handshake/ICE fails — this is the key signal for "why no pairing".
+  const callbacks = {
+    onPeerHandshake: (peerId: string) => {
+      log.ok('handshake', 'peer discovered via signaling (starting WebRTC)', { peerId })
+      handlers.onPeerHandshake?.(peerId)
+    },
+    onJoinError: (details: { error: string; appId: string; roomId: string; peerId: string }) => {
+      log.error('handshake', 'JOIN ERROR (ICE/handshake failed)', details)
+      handlers.onJoinError?.({ error: details.error, peerId: details.peerId })
+    },
+    handshakeTimeoutMs: 30000,
+  }
+
+  const room = joinRoom(config as never, profile.room, callbacks as never)
 
   // Trystero v0.25: makeAction returns an object with `.send` and `.onMessage`.
   const profileAction = room.makeAction<WireProfile>('profile')

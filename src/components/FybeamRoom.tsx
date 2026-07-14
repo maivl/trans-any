@@ -129,6 +129,16 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
           return { ...s, [peerId]: next }
         })
       },
+      onPeerHandshake: (peerId) => {
+        // Signaling found a peer; WebRTC handshake starting (not connected yet).
+        setConnStatus('handshaking')
+        pushToast('Peer found, connecting…', 'info')
+      },
+      onJoinError: (details) => {
+        pushToast('Connection failed — see debug console', 'error')
+        // If no fully-connected peer remains, go back to waiting.
+        if (Object.keys(peers()).length === 0) setConnStatus('connecting')
+      },
     })
 
     setController(ctrl)
@@ -355,6 +365,7 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
   const statusInfo = () => {
     const s = connStatus()
     if (s === 'connected') return { label: 'Connected', dot: 'bg-emerald-500', text: 'text-emerald-600' }
+    if (s === 'handshaking') return { label: 'Connecting…', dot: 'bg-sky-500', text: 'text-sky-600' }
     if (s === 'connecting') return { label: 'Waiting', dot: 'bg-amber-500', text: 'text-amber-600' }
     return { label: 'Disconnected', dot: 'bg-rose-500', text: 'text-rose-600' }
   }
@@ -505,11 +516,19 @@ function SidebarContent(props: {
           <span class="h-1.5 w-1.5 rounded-full bg-sky-400" />
           Signaling {props.signaling.open}/{props.signaling.total} relays
         </div>
-        <Show when={props.waitingLong && props.connStatus !== 'connected'}>
+        <Show when={props.waitingLong && props.connStatus === 'connecting'}>
           <div class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] leading-relaxed text-amber-700">
-            No peer found yet. Pairing can take ~10s. If stuck, open the Debug
-            panel to inspect relay &amp; ICE state — your network may be blocking
-            the signaling relays.
+            No peer found yet. Both sides must be on this page at the same time
+            with the same room code ({props.room}). If the Debug console shows
+            "handshake: peer discovered" but never "presence: peer join", the
+            WebRTC connection (ICE) is failing — usually a NAT/firewall blocking
+            direct P2P (no free public TURN is available).
+          </div>
+        </Show>
+        <Show when={props.connStatus === 'handshaking'}>
+          <div class="mt-2 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-[11px] leading-relaxed text-sky-700">
+            Peer found via signaling — establishing WebRTC connection…
+            (If this stays for >20s, ICE is failing; check the Debug console.)
           </div>
         </Show>
       </div>
