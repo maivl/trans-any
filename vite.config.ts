@@ -7,6 +7,9 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills'
 // via Solid's `customElement` renderer.
 export default defineConfig({
   base: '/',
+  // SPA mode: deep links like /room/<code> and /room/join/<code> fall back to
+  // index.html so the client router can handle them.
+  appType: 'spa',
   plugins: [
     solid(),
     tailwindcss(),

@@ -33,6 +33,18 @@ export const [waitingLong, setWaitingLong] = createSignal(false)
 
 export const [tab, setTab] = createSignal<Tab>('chat')
 
+/** Role: 'creator' (host, approves joiners) or 'joiner' (requests to join). */
+export type Role = 'creator' | 'joiner'
+export const [role, setRole] = createSignal<Role>('creator')
+
+/** Joiner-side: approval state for the creator's decision. */
+export type ApprovalState = 'requesting' | 'approved' | 'denied'
+export const [approvalState, setApprovalState] = createSignal<ApprovalState | null>(null)
+
+/** Creator-side: pending join requests { peerId, name, color, time }. */
+export interface PendingRequest { peerId: string; name: string; color: string; time: number }
+export const [pendingRequests, setPendingRequests] = createSignal<PendingRequest[]>([])
+
 export const [transfers, setTransfers] = createSignal<Transfer[]>([])
 export const [received, setReceived] = createSignal<ReceivedFile[]>([])
 
@@ -69,6 +81,9 @@ export function resetStore() {
   setConnStatus('connecting')
   setSignaling({ open: 0, total: 0 })
   setWaitingLong(false)
+  setRole('creator')
+  setApprovalState(null)
+  setPendingRequests([])
   setTransfers([])
   setReceived([])
   setTab('chat')

@@ -2,7 +2,7 @@ import { onCleanup, onMount, createSignal, Show, For, createEffect } from 'solid
 import { customElement, getCurrentElement, noShadowDOM } from 'solid-element'
 import type { Profile, ChatMessage } from '../types'
 import { createChat, type ChatController, getConfiguredTurnServers, setConfiguredTurnServers } from '../lib/chat'
-import { initIpfs, getNodeId, addFile, catFile } from '../lib/ipfs'
+import { initIpfs, getNodeId, addFile, fetchFile } from '../lib/ipfs'
 import { buildShareUrl, renderQrToCanvas, renderQrDataUrl } from '../lib/qr'
 import { randomId, formatTime, formatBytes, shortCid, gatewayUrl, fileEmoji } from '../lib/utils'
 import { subscribeDebug, clearDebugLog, type DebugEntry } from '../lib/debug'
@@ -17,6 +17,7 @@ import {
   pushToast, resetStore,
   signaling, waitingLong, messages, remoteStreams, transfers, received,
   toasts,
+  role, setRole, approvalState, setApprovalState, pendingRequests, setPendingRequests,
 } from '../store'
 
 /**
@@ -25,10 +26,11 @@ import {
  * The host page just drops this element in; the component auto-joins a room
  * based on the `room` / `name` props (filled by index.ts from ?room= or random).
  */
-function FybeamRoom(props: { room: string; name: string; color: string; roomName: string }) {
+function FybeamRoom(props: { room: string; name: string; color: string; roomName: string; role: string }) {
   // Render in light DOM (no shadow root) so the document's Tailwind styles
   // apply to the component's content.
   noShadowDOM()
+  const isCreator = () => props.role === 'creator'
   const profile = (): Profile => ({
     name: props.name,
     color: props.color,
@@ -45,10 +47,18 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
 
   onMount(() => {
     setConnStatus('connecting')
+    setRole(isCreator() ? 'creator' : 'joiner')
+    // Joiner starts in the "requesting" approval state until the creator decides.
+    if (!isCreator()) setApprovalState('requesting')
     const ctrl = createChat(profile(), {
       onPeerJoin: (peer) => {
-        setPeers((p) => ({ ...p, [peer.id]: peer }))
-        setConnStatus('connected')
+        // Joiner: when the WebRTC channel opens (peer = creator), send a join request.
+        if (!isCreator()) {
+          ctrl.sendJoinRequest(peer.id)
+          setApprovalState('requesting')
+        }
+        // Note: we do NOT add the peer to the peers list / mark connected until
+        // approval completes (creator side) or we are approved (joiner side).
       },
       onPeerLeave: (peerId) => {
         setPeers((p) => {
@@ -141,6 +151,27 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
         setShowTurn(true)
         // If no fully-connected peer remains, go back to waiting.
         if (Object.keys(peers()).length === 0) setConnStatus('connecting')
+      },
+      onJoinRequest: (peerId, prof) => {
+        // Creator: a joiner is requesting to join. Add to pending requests.
+        setPendingRequests((reqs) => {
+          if (reqs.some((r) => r.peerId === peerId)) return reqs
+          return [...reqs, { peerId, name: prof.name, color: prof.color, time: Date.now() }]
+        })
+        pushToast(`${prof.name} is requesting to join`, 'info')
+      },
+      onApproval: (peerId, approved) => {
+        // Joiner: the creator decided.
+        if (approved) {
+          setApprovalState('approved')
+          setConnStatus('connected')
+          pushToast('Approved — you joined the room', 'success')
+        } else {
+          setApprovalState('denied')
+          pushToast('Your join request was denied', 'error')
+          // Leave after a short delay.
+          setTimeout(() => leave(), 1800)
+        }
       },
     })
 
@@ -309,7 +340,7 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
     const tid = randomId()
     addTransfer({ id: tid, name, size, dir: 'recv', peerName: from, progress: 0, done: false, time: Date.now() })
     try {
-      const data = await catFile(cid, size, (r) => updateTransfer(tid, { progress: r }))
+      const data = await fetchFile(cid, size, (r) => updateTransfer(tid, { progress: r }))
       const blob = new Blob([data as BlobPart])
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -326,6 +357,47 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
       updateTransfer(tid, { done: true })
       pushToast('Could not fetch from IPFS', 'error')
     }
+  }
+
+  /** Creator approves a pending joiner: send approval + add to peers. */
+  function approveJoiner(peerId: string) {
+    const req = pendingRequests().find((r) => r.peerId === peerId)
+    if (!req) return
+    controller()?.sendApproval(peerId, true)
+    setPeers((p) => ({
+      ...p,
+      [peerId]: {
+        id: peerId,
+        name: req.name,
+        color: req.color,
+        joinedAt: Date.now(),
+        media: 'none',
+      },
+    }))
+    setPendingRequests((reqs) => reqs.filter((r) => r.peerId !== peerId))
+    setConnStatus('connected')
+    pushToast(`Approved ${req.name}`, 'success')
+    setMessages((m) => [
+      ...m,
+      {
+        id: randomId(),
+        peerId,
+        name: req.name,
+        color: req.color,
+        kind: 'system',
+        text: 'joined the room',
+        time: Date.now(),
+      },
+    ])
+  }
+
+  /** Creator denies a pending joiner: send denial + disconnect the peer. */
+  function denyJoiner(peerId: string) {
+    const req = pendingRequests().find((r) => r.peerId === peerId)
+    controller()?.sendApproval(peerId, false)
+    controller()?.removePeer(peerId)
+    setPendingRequests((reqs) => reqs.filter((r) => r.peerId !== peerId))
+    pushToast(`Denied ${req?.name ?? 'joiner'}`, 'info')
   }
 
   const copyLink = async () => {
@@ -388,6 +460,7 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
       <aside class="hidden h-full w-64 shrink-0 flex-col border-r border-zinc-200 bg-white md:flex md:w-72">
         <SidebarContent
           room={props.room} roomName={props.roomName} name={props.name} color={props.color}
+          isCreator={isCreator()}
           qrCanvas={(el: HTMLCanvasElement | undefined) => (qrCanvas = el)}
           copiedLink={copiedLink()} onCopyLink={copyLink} onDownloadQr={downloadQr}
           statusInfo={statusInfo()} signaling={signaling()} waitingLong={waitingLong()} connStatus={connStatus()}
@@ -397,6 +470,7 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
           showDebug={showDebug()} setShowDebug={setShowDebug}
           onOpenTurn={() => setShowTurn(true)}
           debugEntries={debugEntries()} onClearDebug={() => clearDebugLog()}
+          pendingRequests={pendingRequests()} onApprove={approveJoiner} onDeny={denyJoiner}
         />
       </aside>
 
@@ -479,6 +553,33 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
 
       <Show when={showTurn()}>
         <TurnConfigModal onClose={() => setShowTurn(false)} onSaved={() => { pushToast('TURN saved — reload the page to apply', 'success') }} />
+      </Show>
+
+      {/* Joiner approval overlay — shown until the creator approves/denies */}
+      <Show when={!isCreator() && approvalState() !== 'approved'}>
+        <div class="fixed inset-0 z-40 flex items-center justify-center bg-zinc-50/95 p-6">
+          <div class="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-6 text-center shadow-xl">
+            <Show when={approvalState() === 'denied'} fallback={
+              <>
+                <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                  <svg viewBox="0 0 24 24" fill="none" class="h-6 w-6 animate-spin-slow"><path d="M12 2a10 10 0 1 0 10 10" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" /></svg>
+                </div>
+                <h2 class="text-base font-semibold text-zinc-900">Waiting for approval</h2>
+                <p class="mt-1.5 text-sm text-zinc-500">
+                  The room creator needs to approve your join request. This
+                  appears automatically once they're online.
+                </p>
+                <p class="mt-3 font-mono text-xs text-zinc-400">room / {props.room}</p>
+              </>
+            }>
+              <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-600">
+                <svg viewBox="0 0 24 24" fill="none" class="h-6 w-6"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" /></svg>
+              </div>
+              <h2 class="text-base font-semibold text-zinc-900">Join request denied</h2>
+              <p class="mt-1.5 text-sm text-zinc-500">The creator denied your request. Returning home…</p>
+            </Show>
+          </div>
+        </div>
       </Show>
     </div>
   )
@@ -643,7 +744,7 @@ function TurnConfigModal(props: { onClose: () => void; onSaved: () => void }) {
 
 /* ---- Sidebar content (used inside the <aside>) ---- */
 function SidebarContent(props: {
-  room: string; roomName: string; name: string; color: string
+  room: string; roomName: string; name: string; color: string; isCreator: boolean
   qrCanvas: (el: HTMLCanvasElement | undefined) => void
   copiedLink: boolean; onCopyLink: () => void; onDownloadQr: () => void
   statusInfo: { label: string; dot: string; text: string }
@@ -658,6 +759,8 @@ function SidebarContent(props: {
   showDebug: boolean; setShowDebug: (v: boolean) => void
   onOpenTurn: () => void
   debugEntries: DebugEntry[]; onClearDebug: () => void
+  pendingRequests: { peerId: string; name: string; color: string; time: number }[]
+  onApprove: (peerId: string) => void; onDeny: (peerId: string) => void
 }) {
   return (
     <>
@@ -700,24 +803,56 @@ function SidebarContent(props: {
         </Show>
       </div>
 
-      {/* Inline QR */}
-      <div class="border-y border-zinc-100 bg-zinc-50/60 px-5 py-3">
-        <div class="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Share room</div>
-        <div class="flex justify-center">
-          <div class="rounded-lg border border-zinc-200 bg-white p-1.5 shadow-sm">
-            <canvas ref={props.qrCanvas} class="block h-28 w-28" aria-label="QR code for room share link" />
+      {/* Pending join requests (creator only) */}
+      <Show when={props.isCreator && props.pendingRequests.length > 0}>
+        <div class="border-y border-amber-100 bg-amber-50/60 px-5 py-3">
+          <div class="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-600">
+            Join requests ({props.pendingRequests.length})
+          </div>
+          <div class="space-y-2">
+            <For each={props.pendingRequests}>
+              {(req) => (
+                <div class="flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-2 py-1.5">
+                  <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: req.color }}>
+                    {req.name.slice(0, 2).toUpperCase()}
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <div class="truncate text-xs font-medium text-zinc-800">{req.name}</div>
+                    <div class="text-[10px] text-zinc-400">wants to join</div>
+                  </div>
+                  <button type="button" onClick={() => props.onApprove(req.peerId)} class="rounded-md bg-emerald-500 px-2 py-1 text-[10px] font-medium text-white hover:bg-emerald-600">
+                    ✓ Allow
+                  </button>
+                  <button type="button" onClick={() => props.onDeny(req.peerId)} class="rounded-md border border-zinc-200 px-2 py-1 text-[10px] font-medium text-zinc-500 hover:bg-zinc-50">
+                    ✕ Deny
+                  </button>
+                </div>
+              )}
+            </For>
           </div>
         </div>
-        <p class="mt-1.5 text-center text-[10px] leading-relaxed text-zinc-400">Scan to open with this room code</p>
-        <div class="mt-2 flex gap-1.5">
-          <button type="button" onClick={props.onCopyLink} class="flex flex-1 items-center justify-center gap-1 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-50">
-            {props.copiedLink ? '✓ Copied' : '⧉ Copy link'}
-          </button>
-          <button type="button" onClick={props.onDownloadQr} class="flex flex-1 items-center justify-center gap-1 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-50">
-            ⬇ Save QR
-          </button>
+      </Show>
+
+      {/* Inline QR — creator only */}
+      <Show when={props.isCreator}>
+        <div class="border-y border-zinc-100 bg-zinc-50/60 px-5 py-3">
+          <div class="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Share room</div>
+          <div class="flex justify-center">
+            <div class="rounded-lg border border-zinc-200 bg-white p-1.5 shadow-sm">
+              <canvas ref={props.qrCanvas} class="block h-28 w-28" aria-label="QR code for room share link" />
+            </div>
+          </div>
+          <p class="mt-1.5 text-center text-[10px] leading-relaxed text-zinc-400">Scan to open with this room code</p>
+          <div class="mt-2 flex gap-1.5">
+            <button type="button" onClick={props.onCopyLink} class="flex flex-1 items-center justify-center gap-1 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-50">
+              {props.copiedLink ? '✓ Copied' : '⧉ Copy link'}
+            </button>
+            <button type="button" onClick={props.onDownloadQr} class="flex flex-1 items-center justify-center gap-1 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-50">
+              ⬇ Save QR
+            </button>
+          </div>
         </div>
-      </div>
+      </Show>
 
       {/* Scrollable middle */}
       <div class="min-h-0 flex-1 overflow-y-auto px-5 py-3">
@@ -1161,6 +1296,7 @@ customElement('fybeam-room', {
   name: '',
   color: '#0ea5e9',
   roomName: '',
+  role: 'creator',
 }, FybeamRoom)
 
 export default FybeamRoom

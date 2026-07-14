@@ -1,15 +1,15 @@
 import QRCode from 'qrcode'
 
 /**
- * Build a shareable URL that opens this app with the room code pre-filled,
- * so a scanned QR code lands the recipient directly into the join screen
- * with the room code ready.
+ * Build a shareable URL for joining a room. Creators share this link/QR;
+ * recipients land at `/room/join/<code>` and request to join (subject to
+ * creator approval).
  */
 export function buildShareUrl(room: string): string {
   const url = new URL(window.location.href)
   url.search = ''
   url.hash = ''
-  url.searchParams.set('room', room)
+  url.pathname = `/room/join/${room}`
   return url.toString()
 }
 

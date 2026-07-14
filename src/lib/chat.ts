@@ -27,6 +27,11 @@ export interface ChatController {
   getSignalingInfo: () => SignalingInfo
   /** Snapshot of current peer RTCPeerConnection ICE states. */
   getPeerStates: () => Record<string, { ice: string; conn: string }>
+  /** Approval: joiner requests to join; creator approves/denies. */
+  sendJoinRequest: (to: string) => void
+  sendApproval: (peerId: string, approved: boolean) => void
+  /** Disconnect a specific peer (e.g. after denying approval). */
+  removePeer: (peerId: string) => void
   leave: () => void
 }
 
@@ -41,6 +46,10 @@ export interface ChatHandlers {
   onPeerHandshake?: (peerId: string) => void
   /** WebRTC handshake/ICE failed for a peer. */
   onJoinError?: (details: { error: string; peerId: string }) => void
+  /** A joiner sent a join request (creator side). */
+  onJoinRequest?: (peerId: string, profile: WireProfile) => void
+  /** The creator responded to our join request (joiner side). */
+  onApproval?: (peerId: string, approved: boolean) => void
 }
 
 const APP_ID = 'zai-trystero-p2p-chat-v1'
@@ -145,6 +154,9 @@ export function createChat(
   const profileAction = room.makeAction<WireProfile>('profile')
   const msgAction = room.makeAction<WireMessage>('msg')
   const mediaAction = room.makeAction<WireMedia>('media')
+  // Approval actions: joiner → creator (request), creator → joiner (decision).
+  const joinReqAction = room.makeAction<WireProfile>('join-request')
+  const approvalAction = room.makeAction<{ approved: boolean }>('approval')
 
   // Watch relay sockets come online (signaling transport readiness).
   try {
@@ -293,6 +305,40 @@ export function createChat(
     handlers.onStream(stream, peerId)
   }
 
+  // Approval: joiner → creator (request to join)
+  joinReqAction.onMessage = (data, context) => {
+    log.info('approval', 'join request received', { from: context.peerId, name: data.name })
+    handlers.onJoinRequest?.(context.peerId, data)
+  }
+  // Approval: creator → joiner (decision)
+  approvalAction.onMessage = (data, context) => {
+    log.info('approval', 'decision received', { from: context.peerId, approved: data.approved })
+    handlers.onApproval?.(context.peerId, data.approved)
+  }
+
+  const sendJoinRequest = (to: string) => {
+    log.info('approval', 'sending join request', { to })
+    joinReqAction.send({ name: profile.name, color: profile.color }, { target: to }).catch((e) => log.error('approval', 'join request send failed', e))
+  }
+  const sendApproval = (peerId: string, approved: boolean) => {
+    log.info('approval', 'sending decision', { to: peerId, approved })
+    approvalAction.send({ approved }, { target: peerId }).catch((e) => log.error('approval', 'decision send failed', e))
+  }
+  const removePeer = (peerId: string) => {
+    try {
+      // Trystero v0.25 exposes getPeers(); closing the RTCPeerConnection drops
+      // the peer. There's no public "kick" API, so we close the PC directly.
+      const peers = (room as unknown as { getPeers?: () => Record<string, RTCPeerConnection> }).getPeers?.()
+      const pc = peers?.[peerId]
+      if (pc) {
+        log.info('approval', 'removing peer', { peerId })
+        pc.close()
+      }
+    } catch (e) {
+      log.warn('approval', 'could not remove peer', e)
+    }
+  }
+
   const addStream = (stream: MediaStream) => {
     log.info('media', 'addStream', { tracks: stream.getTracks().length })
     room.addStream(stream)
@@ -350,6 +396,9 @@ export function createChat(
     removeStream,
     getSignalingInfo,
     getPeerStates,
+    sendJoinRequest,
+    sendApproval,
+    removePeer,
     leave,
   }
 }
