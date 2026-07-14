@@ -53,7 +53,5 @@ server.log
 # Skills directory
 /skills/
 
-# solid-chat (Vite + SolidJS sub-project) build output
-solid-chat/dist
-# Next.js static copy of the SolidJS build
-public/chat
+# Vite build output
+/dist

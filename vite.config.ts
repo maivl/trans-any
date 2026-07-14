@@ -3,8 +3,7 @@ import solid from 'vite-plugin-solid'
 import tailwindcss from '@tailwindcss/vite'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
-// Pure Vite + SolidJS app — served directly on port 3000 (no Next.js).
-// `base: '/'` so the app lives at the root.
+// Pure Vite + SolidJS app served from the project root on port 3000.
 export default defineConfig({
   base: '/',
   plugins: [
@@ -20,9 +19,7 @@ export default defineConfig({
     host: true,
     port: 3000,
     strictPort: true,
-    // Allow the Caddy gateway (and any proxy) to forward requests.
     allowedHosts: true,
-    // WebSocket (HMR) through the gateway.
     ws: true,
   },
   build: {

@@ -1,12 +1,10 @@
-// The application lives entirely in `solid-chat/` (a Vite + SolidJS project
-// with its own tooling). There is no root-level JS/TS source to lint, so this
-// config simply ignores everything except nothing. The next-config-based
-// config was removed when Next.js was dropped from the project.
+// Plain ESLint config for the Vite + SolidJS project at the repo root.
+// (No Next.js dependency — that was removed when the project became Vite-only.)
 const eslintConfig = [
   {
     ignores: [
       "node_modules/**",
-      "solid-chat/**",
+      "dist/**",
       "public/**",
       "download/**",
       "examples/**",
@@ -15,6 +13,7 @@ const eslintConfig = [
       "db/**",
       "prisma/**",
       "upload/**",
+      "dev.log",
     ],
   },
 ];

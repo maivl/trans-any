@@ -2,11 +2,31 @@
   "name": "trans-any",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "fybeam — P2P file sharing & chat over WebRTC + IPFS (Vite + SolidJS).",
   "scripts": {
-    "dev": "cd solid-chat && bun run dev 2>&1 | tee ../dev.log",
-    "build": "cd solid-chat && bun run build",
-    "preview": "cd solid-chat && bun run preview",
+    "dev": "vite build && vite preview --port 3000 --host --strictPort 2>&1 | tee dev.log",
+    "build": "vite build",
+    "preview": "vite preview --port 3000 --host --strictPort",
     "lint": "eslint ."
+  },
+  "dependencies": {
+    "@helia/unixfs": "^4",
+    "@trystero-p2p/torrent": "^0.25.3",
+    "helia": "^5",
+    "multiformats": "^14.0.4",
+    "qrcode": "^1.5.4",
+    "solid-js": "^1.9.14",
+    "trystero": "^0.25.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.2",
+    "@types/qrcode": "^1.5.6",
+    "eslint": "^9",
+    "tailwindcss": "^4.3.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.4",
+    "vite-plugin-node-polyfills": "^0.28.0",
+    "vite-plugin-solid": "^2.11.12"
   }
 }

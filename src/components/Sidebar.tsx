@@ -56,12 +56,12 @@ export default function Sidebar(props: { profile: Profile; onLeave: () => void }
   createEffect(() => {
     const c = qrCanvas
     if (c) {
-      renderQrToCanvas(c, shareUrl(), 224).catch((e) => console.error('QR render failed', e))
+      renderQrToCanvas(c, shareUrl(), 112).catch((e) => console.error('QR render failed', e))
     }
   })
   // also render once on mount (in case effect ran before canvas ref attached)
   onMount(() => {
-    if (qrCanvas) renderQrToCanvas(qrCanvas, shareUrl(), 224).catch(() => {})
+    if (qrCanvas) renderQrToCanvas(qrCanvas, shareUrl(), 112).catch(() => {})
   })
 
   const statusInfo = () => {
@@ -126,7 +126,7 @@ export default function Sidebar(props: { profile: Profile; onLeave: () => void }
         </div>
         <div class="flex justify-center">
           <div class="rounded-xl border border-zinc-200 bg-white p-2 shadow-sm">
-            <canvas ref={qrCanvas} class="block h-44 w-44" aria-label="QR code for room share link" />
+            <canvas ref={qrCanvas} class="block h-28 w-28" aria-label="QR code for room share link" />
           </div>
         </div>
         <p class="mt-2 text-center text-[10px] leading-relaxed text-zinc-400">

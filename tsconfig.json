@@ -3,14 +3,19 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "allowJs": false,
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
-    "esModuleInterop": true,
+    "allowImportingTsExtensions": false,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "types": []
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["vite/client"]
   },
-  "include": ["solid-chat/src"]
+  "include": ["src", "vite.config.ts"]
 }
