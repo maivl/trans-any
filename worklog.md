@@ -164,3 +164,27 @@ Stage Summary:
 - Agent Browser end-to-end (two sessions, mDNS-off flag for this headless sandbox): initiator auto-joined with room `brz8b4` + name Maple96, URL became `?room=brz8b4`, share QR + "Signaling 9/9 relays" visible; Bob opened the share link → auto-joined (no home screen) with name Haven11; both reached "Connected"; peer ICE state shown inline as `ice:connected`; 🐛 Debug console showed relay connects, `presence peer join`, `profile announce/sent/received`, `ice watching peer pc {ice:connected, conn:connected}`; cross-peer text message delivered.
 - The user's pairing failures are most likely environmental (relay reachability / mDNS host-candidate resolution / symmetric NAT). The new debug console + inline ICE state let them see exactly where it stalls: relay count, presence announce, ICE candidate types, and ice/conn states.
 - Git: committed `4bca2b8` and pushed to https://github.com/maivl/trans-any.git main. PAT passed via http.extraheader (not stored).
+
+---
+Task ID: 8
+Agent: main (Z.ai Code)
+Task: Diagnose why pairing stays "waiting" despite relays connected + profile announced (user log from https://share.2012056.xyz/?room=gz3hnb).
+
+Root cause (found):
+Trystero's `onPeerJoin` (which the app uses to flip status to "Connected") only fires AFTER the WebRTC data channel opens — specifically from the handshake manager's `onActivate` callback in room.mjs. So the sequence is: relay connect → profile announce → signaling discovers peer → **onPeerHandshake** → WebRTC ICE/DTLS handshake → data channel open → **onPeerJoin**. The user's log stopped after "profile announce sent" with no "peer join" because the WebRTC handshake (ICE) was failing — most likely cross-network NAT with no TURN relay available (no reliable free public TURN exists; OpenRelay credentials are deprecated and allocate 0 relay candidates, verified). The app had no visibility into the handshake stage, so it looked like "stuck waiting".
+
+Fix:
+- Wired Trystero's `JoinRoomCallbacks` (3rd `joinRoom` arg) — previously not passed:
+  * `onPeerHandshake(peerId)` — fires when signaling discovers a peer, BEFORE WebRTC. Logs `[handshake] peer discovered via signaling (starting WebRTC)` and sets a new `handshaking` ConnStatus ("Connecting…", sky-blue dot).
+  * `onJoinError(details)` — fires when the handshake/ICE fails. Logs `[handshake] JOIN ERROR (ICE/handshake failed)` + toasts "Connection failed — see debug console".
+  * `handshakeTimeoutMs: 30000`.
+- Added `onPeerHandshake` / `onJoinError` to ChatHandlers; FybeamRoom sets status='handshaking' on handshake, and toasts on join-error.
+- New ConnStatus `handshaking` + "Connecting…" label.
+- Sidebar hints now differentiate the two stuck states:
+  * waiting (no peer found) → "Both sides must be on this page at the same time with the same room code. If Debug shows 'handshake: peer discovered' but never 'presence: peer join', the WebRTC connection (ICE) is failing — usually NAT/firewall blocking direct P2P (no free public TURN available)."
+  * handshaking → "Peer found via signaling — establishing WebRTC… (If >20s, ICE is failing; check Debug console.)"
+- Verified in sandbox: the `[handshake] peer discovered via signaling` event now appears in the Debug console between `profile announce` and `presence: peer join`, confirming the full sequence is observable.
+
+Stage Summary:
+- For the user: if both peers are on the same room URL simultaneously and the Debug console shows `[handshake] peer discovered via signaling` but then `[handshake] JOIN ERROR` (or nothing further), the bottleneck is WebRTC ICE (cross-network NAT, no TURN). Same-network/two-tab scenarios work. To support cross-network behind symmetric NAT, a user-supplied TURN server is required (added to RTC_CONFIG.iceServers).
+- Build clean, lint clean, preview HTTP 200. Pushed commits `ab17b62`, `e3a4fe5`, `efa6a56` to https://github.com/maivl/trans-any.git main. Also cleaned up: untracked dist/ + tool-results/, fixed .gitignore.
