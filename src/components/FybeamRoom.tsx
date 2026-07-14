@@ -1,7 +1,7 @@
 import { onCleanup, onMount, createSignal, Show, For, createEffect } from 'solid-js'
 import { customElement, getCurrentElement, noShadowDOM } from 'solid-element'
 import type { Profile, ChatMessage } from '../types'
-import { createChat, type ChatController } from '../lib/chat'
+import { createChat, type ChatController, getConfiguredTurnServers, setConfiguredTurnServers } from '../lib/chat'
 import { initIpfs, getNodeId, addFile, catFile } from '../lib/ipfs'
 import { buildShareUrl, renderQrToCanvas, renderQrDataUrl } from '../lib/qr'
 import { randomId, formatTime, formatBytes, shortCid, gatewayUrl, fileEmoji } from '../lib/utils'
@@ -39,6 +39,7 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
   const [controller, setController] = createSignal<ChatController | null>(null)
   const [debugEntries, setDebugEntries] = createSignal<DebugEntry[]>([])
   const [showDebug, setShowDebug] = createSignal(false)
+  const [showTurn, setShowTurn] = createSignal(false)
   const [copiedLink, setCopiedLink] = createSignal(false)
   let qrCanvas: HTMLCanvasElement | undefined
 
@@ -392,6 +393,7 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
           transfers={transfers()} received={received().filter((f) => f.cid)}
           tab={tab()} setTab={setTab} onLeave={leave}
           showDebug={showDebug()} setShowDebug={setShowDebug}
+          onOpenTurn={() => setShowTurn(true)}
           debugEntries={debugEntries()} onClearDebug={() => clearDebugLog()}
         />
       </aside>
@@ -472,6 +474,78 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
           )}
         </For>
       </div>
+
+      <Show when={showTurn()}>
+        <TurnConfigModal onClose={() => setShowTurn(false)} onSaved={() => { pushToast('TURN saved — reload the page to apply', 'success') }} />
+      </Show>
+    </div>
+  )
+}
+
+/* ---- TURN config modal ---- */
+function TurnConfigModal(props: { onClose: () => void; onSaved: () => void }) {
+  const [text, setText] = createSignal('')
+  const [error, setError] = createSignal('')
+
+  onMount(() => {
+    const existing = getConfiguredTurnServers()
+    setText(existing.length ? JSON.stringify(existing, null, 2) : '')
+  })
+
+  const save = () => {
+    setError('')
+    const raw = text().trim()
+    if (!raw) {
+      setConfiguredTurnServers([])
+      props.onSaved()
+      return
+    }
+    try {
+      const parsed = JSON.parse(raw)
+      const arr = Array.isArray(parsed) ? parsed : [parsed]
+      const valid = arr.every(
+        (s: any) => s && typeof s === 'object' && typeof s.urls === 'string',
+      )
+      if (!valid) throw new Error('each entry must have a string "urls"')
+      setConfiguredTurnServers(arr)
+      props.onSaved()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Invalid JSON')
+    }
+  }
+
+  return (
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && props.onClose()}>
+      <div class="flex max-h-[80vh] w-full max-w-md flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl">
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="text-base font-semibold text-zinc-900">🔧 TURN servers</h2>
+          <button type="button" onClick={props.onClose} class="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
+            <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+          </button>
+        </div>
+        <p class="mb-3 text-xs leading-relaxed text-zinc-500">
+          Cross-network pairing (different NATs) needs a TURN relay. No reliable
+          free public TURN exists, so add your own (e.g. from{' '}
+          <a href="https://www.metered.ca/" target="_blank" rel="noreferrer" class="underline">metered.ca</a>{' '}
+          or a self-hosted coturn). Paste an RTCIceServer JSON array — each entry
+          like <code class="rounded bg-zinc-100 px-1">{'{"urls":"turn:host:3478","username":"u","credential":"p"}'}</code>.
+          Saved in this browser only; reload after saving.
+        </p>
+        <textarea
+          value={text()}
+          onInput={(e) => setText(e.currentTarget.value)}
+          rows={8}
+          placeholder='[{"urls":"turn:your.turn.host:3478","username":"...","credential":"..."}]'
+          class="w-full resize-none rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-xs outline-none focus:border-zinc-900 focus:bg-white"
+        />
+        <Show when={error()}>
+          <p class="mt-2 text-xs text-rose-600">{error()}</p>
+        </Show>
+        <div class="mt-3 flex justify-end gap-2">
+          <button type="button" onClick={props.onClose} class="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+          <button type="button" onClick={save} class="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-800">Save</button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -491,6 +565,7 @@ function SidebarContent(props: {
   received: { id: string; cid: string; name: string; size: number; mime: string; from: string; time: number }[]
   tab: string; setTab: (t: 'files' | 'chat') => void; onLeave: () => void
   showDebug: boolean; setShowDebug: (v: boolean) => void
+  onOpenTurn: () => void
   debugEntries: DebugEntry[]; onClearDebug: () => void
 }) {
   return (
@@ -520,15 +595,16 @@ function SidebarContent(props: {
           <div class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] leading-relaxed text-amber-700">
             No peer found yet. Both sides must be on this page at the same time
             with the same room code ({props.room}). If the Debug console shows
-            "handshake: peer discovered" but never "presence: peer join", the
-            WebRTC connection (ICE) is failing — usually a NAT/firewall blocking
-            direct P2P (no free public TURN is available).
+            "handshake: peer discovered" but then "JOIN ERROR", the WebRTC
+            connection (ICE) is failing — usually NAT/firewall blocking direct
+            P2P. Use the 🔧 TURN button to add a TURN relay.
           </div>
         </Show>
         <Show when={props.connStatus === 'handshaking'}>
           <div class="mt-2 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-[11px] leading-relaxed text-sky-700">
             Peer found via signaling — establishing WebRTC connection…
-            (If this stays for >20s, ICE is failing; check the Debug console.)
+            If this fails with JOIN ERROR, use the 🔧 TURN button to configure a
+            TURN relay (needed for cross-network NAT).
           </div>
         </Show>
       </div>
@@ -644,16 +720,21 @@ function SidebarContent(props: {
         </div>
       </div>
 
-      {/* IPFS + Debug toggle + Leave */}
+      {/* IPFS + Debug/TURN toggles + Leave */}
       <div class="border-t border-zinc-200 px-5 py-2">
         <div class="mb-2 flex items-center justify-between gap-1.5 text-[11px] text-zinc-400">
           <span class="flex items-center gap-1.5">
             <span class="h-1.5 w-1.5 rounded-full" classList={{ 'bg-emerald-500': props.ipfsStatus === 'ready', 'bg-amber-500 animate-pulse-soft': props.ipfsStatus === 'init', 'bg-rose-500': props.ipfsStatus === 'error' }} />
             {props.ipfsLabel}
           </span>
-          <button type="button" onClick={() => props.setShowDebug(!props.showDebug)} class="rounded border border-zinc-200 px-2 py-0.5 text-[10px] font-medium text-zinc-500 hover:bg-zinc-50">
-            🐛 Debug
-          </button>
+          <div class="flex gap-1">
+            <button type="button" onClick={props.onOpenTurn} class="rounded border border-zinc-200 px-2 py-0.5 text-[10px] font-medium text-zinc-500 hover:bg-zinc-50" title="Configure TURN servers (for cross-network pairing)">
+              🔧 TURN
+            </button>
+            <button type="button" onClick={() => props.setShowDebug(!props.showDebug)} class="rounded border border-zinc-200 px-2 py-0.5 text-[10px] font-medium text-zinc-500 hover:bg-zinc-50">
+              🐛 Debug
+            </button>
+          </div>
         </div>
         <button type="button" onClick={props.onLeave} class="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-600 transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600">
           Leave room

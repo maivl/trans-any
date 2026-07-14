@@ -64,13 +64,51 @@ const RELAY_URLS = [
 ]
 
 /** STUN servers for reflexive ICE candidates. */
-const RTC_CONFIG: RTCConfiguration = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' },
-  ],
+const STUN_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+]
+
+const TURN_STORAGE_KEY = 'fybeam-turn-servers'
+
+/**
+ * Read user-configured TURN servers from localStorage. Each entry is a full
+ * RTCIceServer JSON object ({urls, username, credential}). This lets users
+ * behind symmetric NATs add their own TURN (no reliable free public TURN
+ * exists) to enable cross-network pairing.
+ */
+export function getConfiguredTurnServers(): RTCIceServer[] {
+  try {
+    const raw = localStorage.getItem(TURN_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (s) => s && typeof s === 'object' && typeof s.urls === 'string',
+    ) as RTCIceServer[]
+  } catch {
+    return []
+  }
+}
+
+export function setConfiguredTurnServers(servers: RTCIceServer[]): void {
+  try {
+    localStorage.setItem(TURN_STORAGE_KEY, JSON.stringify(servers))
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Build the RTCConfiguration with STUN + any user-configured TURN servers. */
+function buildRtcConfig(): RTCConfiguration {
+  const turn = getConfiguredTurnServers()
+  log.info('ice', 'ICE servers', { stun: STUN_SERVERS.length, turn: turn.length, turnUrls: turn.map((t) => t.urls) })
+  return {
+    iceServers: [...STUN_SERVERS, ...turn],
+    iceTransportPolicy: 'all',
+  }
 }
 
 export function createChat(
@@ -80,7 +118,7 @@ export function createChat(
   const selfId = randomId()
   const config = {
     appId: APP_ID,
-    rtcConfig: RTC_CONFIG,
+    rtcConfig: buildRtcConfig(),
     relayConfig: { urls: RELAY_URLS },
   } as Record<string, unknown>
 
