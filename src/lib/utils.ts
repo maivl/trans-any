@@ -16,6 +16,13 @@ const ROOM_WORDS_B = [
   'Lark', 'Bay', 'Mist', 'Shore',
 ]
 
+/** A pool of friendly random display names. */
+const NAME_POOL = [
+  'Falcon', 'Maple', 'Nova', 'River', 'Sage', 'Wren', 'Onyx', 'Lumen',
+  'Pixel', 'Quartz', 'Indigo', 'Hazel', 'Cobalt', 'Juniper', 'Echo', 'Vesper',
+  'Atlas', 'Briar', 'Cedar', 'Dune', 'Fern', 'Glint', 'Haven', 'Iris',
+]
+
 export function randomId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID()
@@ -37,6 +44,13 @@ export function randomRoomName(): string {
   const a = ROOM_WORDS_A[Math.floor(Math.random() * ROOM_WORDS_A.length)]
   const b = ROOM_WORDS_B[Math.floor(Math.random() * ROOM_WORDS_B.length)]
   return `${a} ${b}`
+}
+
+/** A random friendly display name, optionally suffixed to reduce collisions. */
+export function randomName(): string {
+  const base = NAME_POOL[Math.floor(Math.random() * NAME_POOL.length)]
+  const suffix = Math.floor(Math.random() * 90 + 10)
+  return `${base}${suffix}`
 }
 
 /** Deterministic color for a given id. */

@@ -1,6 +1,7 @@
 import { joinRoom, getRelaySockets } from 'trystero'
 import type { PeerInfo, ChatMessage, WireMessage, WireMedia, WireProfile, Profile } from '../types'
 import { colorFromId, randomId } from './utils'
+import { log } from './debug'
 
 type RoomHandle = ReturnType<typeof joinRoom>
 
@@ -24,6 +25,8 @@ export interface ChatController {
   removeStream: (stream: MediaStream) => void
   /** Current signaling-relay connection count (open / total). */
   getSignalingInfo: () => SignalingInfo
+  /** Snapshot of current peer RTCPeerConnection ICE states. */
+  getPeerStates: () => Record<string, { ice: string; conn: string }>
   leave: () => void
 }
 
@@ -71,14 +74,13 @@ export function createChat(
   handlers: ChatHandlers,
 ): ChatController {
   const selfId = randomId()
-  // `relayConfig.urls` is read by Trystero's getRelays (not in the TS types),
-  // so we cast to pass a curated relay list.
   const config = {
     appId: APP_ID,
     rtcConfig: RTC_CONFIG,
     relayConfig: { urls: RELAY_URLS },
   } as Record<string, unknown>
-  console.log('[trystero] joining room', profile.room, 'as', profile.name)
+
+  log.info('chat', 'joining room', { room: profile.room, name: profile.name, relays: RELAY_URLS.length })
   const room = joinRoom(config as never, profile.room)
 
   // Trystero v0.25: makeAction returns an object with `.send` and `.onMessage`.
@@ -86,10 +88,29 @@ export function createChat(
   const msgAction = room.makeAction<WireMessage>('msg')
   const mediaAction = room.makeAction<WireMedia>('media')
 
+  // Watch relay sockets come online (signaling transport readiness).
+  try {
+    const sockets = getRelaySockets() as Record<string, { readyState?: number; addEventListener?: (e: string, cb: () => void) => void }>
+    Object.entries(sockets).forEach(([url, sock]) => {
+      const check = () => {
+        const open = sock.readyState === 1
+        log.info('relay', open ? 'connected' : 'state', { url, readyState: sock.readyState })
+      }
+      check()
+      sock.addEventListener?.('open', () => log.ok('relay', 'connected', { url }))
+      sock.addEventListener?.('error', () => log.error('relay', 'error', { url }))
+      sock.addEventListener?.('close', () => log.warn('relay', 'closed', { url }))
+    })
+  } catch (e) {
+    log.warn('relay', 'could not introspect sockets', e)
+  }
+
   const announceProfile = (to?: string) => {
+    log.info('profile', 'announce', to ? { to } : 'broadcast')
     profileAction
       .send({ name: profile.name, color: profile.color }, to ? { target: to } : undefined)
-      .catch(() => {})
+      .then(() => log.ok('profile', 'announce sent', to ? { to } : 'broadcast'))
+      .catch((e) => log.error('profile', 'announce failed', e))
   }
 
   const sendMessage = (m: ChatMessage) => {
@@ -102,16 +123,61 @@ export function createChat(
       file: m.file,
       time: m.time,
     }
-    msgAction.send(wire).catch(() => {})
+    msgAction.send(wire).catch((e) => log.error('msg', 'send failed', e))
   }
 
   const sendMedia = (m: WireMedia, to?: string[]) => {
-    mediaAction.send(m, to ? { target: to } : undefined).catch(() => {})
+    mediaAction.send(m, to ? { target: to } : undefined).catch((e) => log.error('media', 'send failed', e))
+  }
+
+  /** Attach ICE/connection-state logging to a peer's RTCPeerConnection. */
+  const watchPeerPc = (peerId: string) => {
+    try {
+      const peers = (room as unknown as { getPeers?: () => Record<string, RTCPeerConnection> }).getPeers?.()
+      const pc = peers?.[peerId]
+      if (!pc) {
+        log.warn('ice', 'no RTCPeerConnection for peer', { peerId })
+        return
+      }
+      log.info('ice', 'watching peer pc', { peerId, signaling: pc.signalingState, ice: pc.iceConnectionState, conn: pc.connectionState })
+      const summarize = (ev: Event) => {
+        const t = ev.type
+        // candidate dump
+        if (t === 'icecandidate' && ev instanceof RTCPeerConnectionIceEvent && ev.candidate) {
+          const c = ev.candidate.candidate
+          const typ = c.includes('typ host') ? 'host' : c.includes('typ srflx') ? 'srflx' : c.includes('typ relay') ? 'relay' : c.includes('typ prflx') ? 'prflx' : 'other'
+          log.info('ice', `candidate (${typ})`, { peerId, candidate: c })
+        } else if (t === 'icegatheringstatechange') {
+          log.info('ice', 'gathering', { peerId, state: pc.iceGatheringState })
+        } else if (t === 'iceconnectionstatechange') {
+          log.info('ice', 'ice state', { peerId, state: pc.iceConnectionState })
+        } else if (t === 'connectionstatechange') {
+          log.info('ice', 'conn state', { peerId, state: pc.connectionState })
+        } else if (t === 'signalingstatechange') {
+          log.info('ice', 'signaling', { peerId, state: pc.signalingState })
+        } else if (t === 'datachannel') {
+          log.ok('ice', 'datachannel open', { peerId })
+        } else if (t === 'track') {
+          log.ok('ice', 'track received', { peerId })
+        }
+      }
+      ;[
+        'icecandidate',
+        'icegatheringstatechange',
+        'iceconnectionstatechange',
+        'connectionstatechange',
+        'signalingstatechange',
+        'datachannel',
+        'track',
+      ].forEach((ev) => pc.addEventListener(ev, summarize))
+    } catch (e) {
+      log.warn('ice', 'could not attach watchers', e)
+    }
   }
 
   // Trystero v0.25: presence events are assignable properties.
   room.onPeerJoin = (peerId: string) => {
-    console.log('[trystero] peer join', peerId)
+    log.ok('presence', 'peer join', { peerId })
     // Send our profile to the newly joined peer so they know who we are.
     announceProfile(peerId)
     handlers.onPeerJoin({
@@ -121,15 +187,18 @@ export function createChat(
       joinedAt: Date.now(),
       media: 'none',
     })
+    // Attach ICE debug watchers on the new peer's RTCPeerConnection.
+    watchPeerPc(peerId)
   }
 
   room.onPeerLeave = (peerId: string) => {
-    console.log('[trystero] peer leave', peerId)
+    log.warn('presence', 'peer leave', { peerId })
     handlers.onPeerLeave(peerId)
   }
 
   // Incoming profiles
   profileAction.onMessage = (data, context) => {
+    log.ok('profile', 'received', { from: context.peerId, name: data.name })
     handlers.onProfile({
       id: context.peerId,
       name: data.name || 'Anonymous',
@@ -141,6 +210,7 @@ export function createChat(
 
   // Incoming messages
   msgAction.onMessage = (data, context) => {
+    log.ok('msg', 'received', { from: context.peerId, kind: data.kind })
     handlers.onMessage({
       id: data.id,
       peerId: context.peerId,
@@ -155,22 +225,27 @@ export function createChat(
 
   // Incoming media control events
   mediaAction.onMessage = (data, context) => {
+    log.info('media', 'event', { from: context.peerId, event: data.event, kind: data.kind })
     handlers.onMedia(context.peerId, data)
   }
 
   // Incoming media streams (audio/video tracks)
   room.onPeerStream = (stream: MediaStream, peerId: string) => {
+    log.ok('media', 'stream received', { peerId, tracks: stream.getTracks().length })
     handlers.onStream(stream, peerId)
   }
 
   const addStream = (stream: MediaStream) => {
+    log.info('media', 'addStream', { tracks: stream.getTracks().length })
     room.addStream(stream)
   }
   const removeStream = (stream: MediaStream) => {
+    log.info('media', 'removeStream')
     room.removeStream(stream)
   }
 
   const leave = () => {
+    log.info('chat', 'leaving room')
     try {
       void room.leave()
     } catch {
@@ -189,8 +264,23 @@ export function createChat(
     }
   }
 
+  const getPeerStates = (): Record<string, { ice: string; conn: string }> => {
+    try {
+      const peers = (room as unknown as { getPeers?: () => Record<string, RTCPeerConnection> }).getPeers?.() ?? {}
+      const out: Record<string, { ice: string; conn: string }> = {}
+      for (const [id, pc] of Object.entries(peers)) {
+        out[id] = { ice: pc.iceConnectionState, conn: pc.connectionState }
+      }
+      return out
+    } catch {
+      return {}
+    }
+  }
+
   // Announce ourselves to anyone already in the room.
   announceProfile()
+
+  log.ok('chat', 'room joined', { selfId, room: profile.room })
 
   return {
     room,
@@ -201,6 +291,7 @@ export function createChat(
     addStream,
     removeStream,
     getSignalingInfo,
+    getPeerStates,
     leave,
   }
 }

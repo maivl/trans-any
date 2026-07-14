@@ -1,13 +1,15 @@
 import { defineConfig } from 'vite'
+import solid from 'vite-plugin-solid'
 import tailwindcss from '@tailwindcss/vite'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
-// Pure Vite + vanilla Web Components (no framework). Served from the repo root.
+// Vite + SolidJS. Components are exposed as Web Components (custom elements)
+// via Solid's `customElement` renderer.
 export default defineConfig({
   base: '/',
   plugins: [
+    solid(),
     tailwindcss(),
-    // Helia / libp2p reference Node-style globals (Buffer, process, global).
     nodePolyfills({
       globals: { Buffer: true, global: true, process: true },
       exclude: ['fs', 'path', 'crypto', 'os', 'child_process'],
