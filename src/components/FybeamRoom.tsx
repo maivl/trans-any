@@ -915,7 +915,10 @@ function SidebarContent(props: {
               <div class="flex items-center gap-2 rounded-md px-1.5 py-1">
                 <span class="text-sm">{t.dir === 'send' ? '↑' : '↓'}</span>
                 <div class="min-w-0 flex-1">
-                  <div class="truncate text-xs font-medium text-zinc-700">{t.name}</div>
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="truncate text-xs font-medium text-zinc-700">{t.name}</span>
+                    <span class="shrink-0 text-[10px] text-zinc-400">{formatBytes(t.size)}</span>
+                  </div>
                   <div class="mt-0.5 h-1 overflow-hidden rounded-full bg-zinc-100">
                     <div class="h-full rounded-full bg-zinc-900 transition-all" classList={{ 'bg-emerald-500': t.done }} style={{ width: `${Math.round(t.progress * 100)}%` }} />
                   </div>
@@ -1242,7 +1245,11 @@ function FileBubble(props: {
         <span class="text-xl">{fileEmoji(props.file.mime)}</span>
         <div class="min-w-0 flex-1">
           <div class="min-w-0 break-words text-sm font-medium [overflow-wrap:anywhere]">{props.file.name}</div>
-          <div class="text-[11px] text-zinc-400">{formatBytes(props.file.size)}</div>
+          <div class="flex items-center gap-1.5 text-[11px] text-zinc-400">
+            <span class="font-medium">{formatBytes(props.file.size)}</span>
+            <span>·</span>
+            <span class="truncate">{props.file.mime || 'file'}</span>
+          </div>
         </div>
       </div>
       <div class="mt-2 flex items-center justify-between gap-2 border-t border-current/10 pt-2">

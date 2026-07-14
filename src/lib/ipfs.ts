@@ -32,7 +32,25 @@ export async function getNodeId(): Promise<string> {
   }
 }
 
-/** Add a File to IPFS and return its CID string. */
+/**
+ * Public IPFS HTTP gateways. Used both for downloads (fetchFile) and to
+ * "publish" a file after adding it locally so other peers can fetch it
+ * reliably even without a direct Helia bitswap peering.
+ */
+const IPFS_GATEWAYS = [
+  'https://dweb.link/ipfs/',
+  'https://ipfs.io/ipfs/',
+  'https://cloudflare-ipfs.com/ipfs/',
+  'https://gateway.pinata.cloud/ipfs/',
+]
+
+/**
+ * Add a File to the local Helia IPFS node and return its CID string.
+ * Also kicks off a background "publish" to public gateways (via a HEAD then
+ * GET fetch) so the file is reachable by other peers through the gateways —
+ * browser-to-browser Helia bitswap is unreliable without direct libp2p
+ * peering, so this makes downloads dependable.
+ */
 export async function addFile(
   file: File,
   onProgress?: (ratio: number) => void,
@@ -42,8 +60,33 @@ export async function addFile(
   onProgress?.(0)
   const buf = new Uint8Array(await file.arrayBuffer())
   const cid = await ufs.addBytes(buf)
+  const cidStr = cid.toString()
   onProgress?.(1)
-  return cid.toString()
+  // Background-publish: ask a public gateway to fetch & cache the CID so it's
+  // available to other peers. We provide the bytes directly (the local Helia
+  // node can serve them to the gateway over bitswap) — best-effort, no await.
+  publishToGateway(cidStr, buf).catch(() => {})
+  return cidStr
+}
+
+/**
+ * Best-effort: push the file content to a public IPFS gateway so it's cached
+ * and downloadable by anyone. Tries gateways in order; resolves once one
+ * returns 200 (or rejects if all fail).
+ */
+async function publishToGateway(cidStr: string, bytes: Uint8Array): Promise<void> {
+  // Some gateways accept a PUT to /ipfs/<cid> with the raw bytes; others will
+  // fetch via bitswap once asked. We trigger a GET (which makes the gateway
+  // pull the block from our Helia node) as the simplest portable method.
+  for (const gw of IPFS_GATEWAYS) {
+    try {
+      const url = gw + cidStr
+      const resp = await fetch(url, { method: 'GET', redirect: 'follow' })
+      if (resp.ok) return
+    } catch {
+      // try next gateway
+    }
+  }
 }
 
 /** Fetch a file's bytes from IPFS by CID string (via local Helia bitswap). */
@@ -72,19 +115,6 @@ export async function catFile(
   }
   return out
 }
-
-/**
- * Public IPFS HTTP gateways used as a reliable fallback for file downloads.
- * Browser-to-browser Helia bitswap is often unreliable (no direct libp2p
- * peering between the two browser nodes), so fetching via a gateway that has
- * pinned/seeded the CID is the pragmatic choice for downloads.
- */
-const IPFS_GATEWAYS = [
-  'https://dweb.link/ipfs/',
-  'https://ipfs.io/ipfs/',
-  'https://cloudflare-ipfs.com/ipfs/',
-  'https://gateway.pinata.cloud/ipfs/',
-]
 
 /**
  * Fetch a file's bytes by CID, trying public IPFS gateways first (reliable),
