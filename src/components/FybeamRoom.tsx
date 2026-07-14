@@ -136,7 +136,9 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
         pushToast('Peer found, connecting…', 'info')
       },
       onJoinError: (details) => {
-        pushToast('Connection failed — see debug console', 'error')
+        pushToast('Connection failed — add a TURN server to pair across networks', 'error')
+        // Auto-open the TURN config modal so the user can fix it immediately.
+        setShowTurn(true)
         // If no fully-connected peer remains, go back to waiting.
         if (Object.keys(peers()).length === 0) setConnStatus('connecting')
       },
@@ -484,66 +486,155 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
 
 /* ---- TURN config modal ---- */
 function TurnConfigModal(props: { onClose: () => void; onSaved: () => void }) {
-  const [text, setText] = createSignal('')
+  const [urls, setUrls] = createSignal('')
+  const [username, setUsername] = createSignal('')
+  const [credential, setCredential] = createSignal('')
   const [error, setError] = createSignal('')
+  const [testing, setTesting] = createSignal(false)
+  const [testResult, setTestResult] = createSignal<{ ok: boolean; text: string } | null>(null)
 
   onMount(() => {
     const existing = getConfiguredTurnServers()
-    setText(existing.length ? JSON.stringify(existing, null, 2) : '')
+    if (existing.length) {
+      const first = existing[0]
+      setUrls(first.urls || '')
+      setUsername(first.username || '')
+      setCredential(first.credential || '')
+    }
   })
+
+  const buildServers = (): RTCIceServer[] | null => {
+    const u = urls().trim()
+    if (!u) return []
+    const entry: RTCIceServer = { urls: u }
+    if (username().trim()) entry.username = username().trim()
+    if (credential().trim()) entry.credential = credential().trim()
+    return [entry]
+  }
 
   const save = () => {
     setError('')
-    const raw = text().trim()
-    if (!raw) {
-      setConfiguredTurnServers([])
-      props.onSaved()
+    setTestResult(null)
+    const servers = buildServers()
+    if (servers === null) {
+      setError('Invalid TURN config')
       return
     }
+    setConfiguredTurnServers(servers)
+    props.onSaved()
+  }
+
+  /** Test whether the configured TURN actually allocates a relay candidate. */
+  const testTurn = async () => {
+    setError('')
+    setTestResult(null)
+    const servers = buildServers()
+    if (servers === null || servers.length === 0) {
+      setError('Enter a TURN URL first')
+      return
+    }
+    setTesting(true)
     try {
-      const parsed = JSON.parse(raw)
-      const arr = Array.isArray(parsed) ? parsed : [parsed]
-      const valid = arr.every(
-        (s: any) => s && typeof s === 'object' && typeof s.urls === 'string',
-      )
-      if (!valid) throw new Error('each entry must have a string "urls"')
-      setConfiguredTurnServers(arr)
-      props.onSaved()
+      const pc = new RTCPeerConnection({ iceServers: servers })
+      pc.createDataChannel('x')
+      let relayCount = 0
+      let total = 0
+      pc.onicecandidate = (e) => {
+        if (e.candidate) {
+          total++
+          if (e.candidate.candidate.includes('typ relay')) relayCount++
+        }
+      }
+      await pc.setLocalDescription(await pc.createOffer())
+      await new Promise((r) => setTimeout(r, 8000))
+      pc.close()
+      if (relayCount > 0) {
+        setTestResult({ ok: true, text: `✓ TURN works — ${relayCount} relay candidate(s) allocated` })
+      } else {
+        setTestResult({ ok: false, text: `✗ No relay candidates (got ${total} candidates). TURN server is unreachable or credentials are wrong.` })
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Invalid JSON')
+      setTestResult({ ok: false, text: `✗ ${e instanceof Error ? e.message : 'Test failed'}` })
+    } finally {
+      setTesting(false)
     }
   }
 
   return (
     <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && props.onClose()}>
-      <div class="flex max-h-[80vh] w-full max-w-md flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-md flex-col overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl">
         <div class="mb-3 flex items-center justify-between">
-          <h2 class="text-base font-semibold text-zinc-900">🔧 TURN servers</h2>
+          <h2 class="text-base font-semibold text-zinc-900">🔧 TURN server</h2>
           <button type="button" onClick={props.onClose} class="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
             <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
           </button>
         </div>
+        <div class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-700">
+          <strong>Why am I here?</strong> Your last pairing failed with
+          <code class="mx-1 rounded bg-amber-100 px-1">JOIN ERROR</code>
+          because both peers are on different networks behind NAT. A TURN relay
+          is required for cross-network P2P. Same-network/two-tab pairing works
+          without TURN.
+        </div>
         <p class="mb-3 text-xs leading-relaxed text-zinc-500">
-          Cross-network pairing (different NATs) needs a TURN relay. No reliable
-          free public TURN exists, so add your own (e.g. from{' '}
-          <a href="https://www.metered.ca/" target="_blank" rel="noreferrer" class="underline">metered.ca</a>{' '}
-          or a self-hosted coturn). Paste an RTCIceServer JSON array — each entry
-          like <code class="rounded bg-zinc-100 px-1">{'{"urls":"turn:host:3478","username":"u","credential":"p"}'}</code>.
-          Saved in this browser only; reload after saving.
+          Get a TURN server from{' '}
+          <a href="https://www.metered.ca/" target="_blank" rel="noreferrer" class="font-medium text-zinc-700 underline">metered.ca</a>{' '}
+          (free tier) or self-host{' '}
+          <a href="https://github.com/coturn/coturn" target="_blank" rel="noreferrer" class="font-medium text-zinc-700 underline">coturn</a>.
+          Saved in this browser only — reload the page after saving.
         </p>
-        <textarea
-          value={text()}
-          onInput={(e) => setText(e.currentTarget.value)}
-          rows={8}
-          placeholder='[{"urls":"turn:your.turn.host:3478","username":"...","credential":"..."}]'
-          class="w-full resize-none rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-xs outline-none focus:border-zinc-900 focus:bg-white"
+
+        <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400">TURN URL</label>
+        <input
+          type="text"
+          value={urls()}
+          onInput={(e) => setUrls(e.currentTarget.value)}
+          placeholder="turn:your.turn.host:3478"
+          class="mb-3 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-xs outline-none focus:border-zinc-900 focus:bg-white"
         />
+        <div class="mb-3 grid grid-cols-2 gap-2">
+          <div>
+            <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400">Username</label>
+            <input
+              type="text"
+              value={username()}
+              onInput={(e) => setUsername(e.currentTarget.value)}
+              placeholder="(optional)"
+              class="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs outline-none focus:border-zinc-900 focus:bg-white"
+            />
+          </div>
+          <div>
+            <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400">Credential</label>
+            <input
+              type="text"
+              value={credential()}
+              onInput={(e) => setCredential(e.currentTarget.value)}
+              placeholder="(optional)"
+              class="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs outline-none focus:border-zinc-900 focus:bg-white"
+            />
+          </div>
+        </div>
+
         <Show when={error()}>
-          <p class="mt-2 text-xs text-rose-600">{error()}</p>
+          <p class="mb-2 text-xs text-rose-600">{error()}</p>
         </Show>
-        <div class="mt-3 flex justify-end gap-2">
-          <button type="button" onClick={props.onClose} class="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
-          <button type="button" onClick={save} class="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-800">Save</button>
+        <Show when={testResult()}>
+          <p class="mb-2 text-xs" classList={{ 'text-emerald-600': testResult()!.ok, 'text-rose-600': !testResult()!.ok }}>{testResult()!.text}</p>
+        </Show>
+
+        <div class="mt-1 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={testTurn}
+            disabled={testing()}
+            class="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-40"
+          >
+            {testing() ? 'Testing…' : 'Test TURN'}
+          </button>
+          <div class="flex gap-2">
+            <button type="button" onClick={props.onClose} class="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+            <button type="button" onClick={save} class="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-800">Save &amp; reload</button>
+          </div>
         </div>
       </div>
     </div>
