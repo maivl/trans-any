@@ -2,6 +2,7 @@ import { joinRoom, getRelaySockets } from 'trystero'
 import type { PeerInfo, ChatMessage, WireMessage, WireMedia, WireProfile, Profile } from '../types'
 import { colorFromId, randomId } from './utils'
 import { log } from './debug'
+import { encryptText, decryptText, encryptBytes, decryptBytes, type CryptoKeyLike } from './crypto'
 
 type RoomHandle = ReturnType<typeof joinRoom>
 
@@ -30,6 +31,8 @@ export interface ChatController {
   /** Approval: joiner requests to join; creator approves/denies. */
   sendJoinRequest: (to: string) => void
   sendApproval: (peerId: string, approved: boolean) => void
+  /** Send the E2E room key to an approved joiner (creator side). */
+  sendRoomKey: (peerId: string, keyB64: string) => void
   /** Disconnect a specific peer (e.g. after denying approval). */
   removePeer: (peerId: string) => void
   leave: () => void
@@ -50,6 +53,8 @@ export interface ChatHandlers {
   onJoinRequest?: (peerId: string, profile: WireProfile) => void
   /** The creator responded to our join request (joiner side). */
   onApproval?: (peerId: string, approved: boolean) => void
+  /** The creator sent us the E2E room key (joiner side). */
+  onRoomKey?: (peerId: string, keyB64: string) => void
 }
 
 const APP_ID = 'zai-trystero-p2p-chat-v1'
@@ -80,13 +85,15 @@ const STUN_SERVERS = [
   { urls: 'stun:stun.cloudflare.com:3478' },
 ]
 
+// NOTE: TURN support has been removed. Cross-network WebRTC pairing now relies
+// on STUN + host candidates; files travel via IPFS gateways (encrypted) and
+// text via the WebRTC data channel. If you need cross-network NAT traversal
+// for the data channel itself, re-add a TURN server to STUN_SERVERS below.
 const TURN_STORAGE_KEY = 'fybeam-turn-servers'
 
 /**
- * Read user-configured TURN servers from localStorage. Each entry is a full
- * RTCIceServer JSON object ({urls, username, credential}). This lets users
- * behind symmetric NATs add their own TURN (no reliable free public TURN
- * exists) to enable cross-network pairing.
+ * Read user-configured TURN servers from localStorage. (Currently unused —
+ * TURN UI is disabled. Kept for potential re-enablement.)
  */
 export function getConfiguredTurnServers(): RTCIceServer[] {
   try {
@@ -110,12 +117,11 @@ export function setConfiguredTurnServers(servers: RTCIceServer[]): void {
   }
 }
 
-/** Build the RTCConfiguration with STUN + any user-configured TURN servers. */
+/** Build the RTCConfiguration with STUN servers (TURN disabled). */
 function buildRtcConfig(): RTCConfiguration {
-  const turn = getConfiguredTurnServers()
-  log.info('ice', 'ICE servers', { stun: STUN_SERVERS.length, turn: turn.length, turnUrls: turn.map((t) => t.urls) })
+  log.info('ice', 'ICE servers (STUN only; TURN disabled)', { stun: STUN_SERVERS.length })
   return {
-    iceServers: [...STUN_SERVERS, ...turn],
+    iceServers: [...STUN_SERVERS],
     iceTransportPolicy: 'all',
   }
 }
@@ -123,8 +129,10 @@ function buildRtcConfig(): RTCConfiguration {
 export function createChat(
   profile: Profile,
   handlers: ChatHandlers,
+  getRoomKey?: () => CryptoKeyLike | null,
 ): ChatController {
   const selfId = randomId()
+  const roomKey = () => (getRoomKey ? getRoomKey() : null)
   const config = {
     appId: APP_ID,
     rtcConfig: buildRtcConfig(),
@@ -157,6 +165,8 @@ export function createChat(
   // Approval actions: joiner → creator (request), creator → joiner (decision).
   const joinReqAction = room.makeAction<WireProfile>('join-request')
   const approvalAction = room.makeAction<{ approved: boolean }>('approval')
+  // Room-key exchange: creator → approved joiner (E2E encryption key).
+  const keyAction = room.makeAction<{ key: string }>('room-key')
 
   // Watch relay sockets come online (signaling transport readiness).
   try {
@@ -183,14 +193,29 @@ export function createChat(
       .catch((e) => log.error('profile', 'announce failed', e))
   }
 
-  const sendMessage = (m: ChatMessage) => {
+  const sendMessage = async (m: ChatMessage) => {
+    // E2E encrypt text and file CID if a room key is present.
+    let encText = m.text
+    let encFile = m.file
+    if (roomKey()) {
+      try {
+        if (m.text) encText = await encryptText(roomKey(), m.text)
+        if (m.file) {
+          // Encrypt the CID so only key-holders can fetch the right file.
+          const encCid = await encryptText(roomKey(), m.file.cid)
+          encFile = { ...m.file, cid: encCid }
+        }
+      } catch (e) {
+        log.error('crypto', 'encrypt failed, sending plaintext', e)
+      }
+    }
     const wire: WireMessage = {
       id: m.id,
       name: m.name,
       color: m.color,
       kind: m.kind,
-      text: m.text,
-      file: m.file,
+      text: encText,
+      file: encFile,
       time: m.time,
     }
     msgAction.send(wire).catch((e) => log.error('msg', 'send failed', e))
@@ -269,6 +294,10 @@ export function createChat(
   // Incoming profiles
   profileAction.onMessage = (data, context) => {
     log.ok('profile', 'received', { from: context.peerId, name: data.name })
+    if (typeof handlers.onProfile !== 'function') {
+      log.error('profile', 'handlers.onProfile is not a function!', { type: typeof handlers.onProfile })
+      return
+    }
     handlers.onProfile({
       id: context.peerId,
       name: data.name || 'Anonymous',
@@ -278,19 +307,38 @@ export function createChat(
     })
   }
 
-  // Incoming messages
-  msgAction.onMessage = (data, context) => {
+  // Incoming messages — decrypt text and file CID if a room key is present.
+  msgAction.onMessage = async (data, context) => {
     log.ok('msg', 'received', { from: context.peerId, kind: data.kind })
+    let text = data.text
+    let file = data.file
+    if (roomKey()) {
+      try {
+        if (data.text) text = await decryptText(roomKey(), data.text)
+        if (data.file) {
+          const decCid = await decryptText(roomKey(), data.file.cid)
+          file = { ...data.file, cid: decCid }
+        }
+      } catch (e) {
+        log.error('crypto', 'decrypt failed', e)
+      }
+    }
     handlers.onMessage({
       id: data.id,
       peerId: context.peerId,
       name: data.name,
       color: data.color,
       kind: data.kind,
-      text: data.text,
-      file: data.file,
+      text,
+      file,
       time: data.time,
     })
+  }
+
+  // Incoming room key (joiner receives from creator after approval).
+  keyAction.onMessage = (data, context) => {
+    log.ok('crypto', 'room key received', { from: context.peerId })
+    handlers.onRoomKey?.(context.peerId, data.key)
   }
 
   // Incoming media control events
@@ -323,6 +371,10 @@ export function createChat(
   const sendApproval = (peerId: string, approved: boolean) => {
     log.info('approval', 'sending decision', { to: peerId, approved })
     approvalAction.send({ approved }, { target: peerId }).catch((e) => log.error('approval', 'decision send failed', e))
+  }
+  const sendRoomKey = (peerId: string, keyB64: string) => {
+    log.info('crypto', 'sending room key', { to: peerId })
+    keyAction.send({ key: keyB64 }, { target: peerId }).catch((e) => log.error('crypto', 'key send failed', e))
   }
   const removePeer = (peerId: string) => {
     try {
@@ -398,6 +450,7 @@ export function createChat(
     getPeerStates,
     sendJoinRequest,
     sendApproval,
+    sendRoomKey,
     removePeer,
     leave,
   }

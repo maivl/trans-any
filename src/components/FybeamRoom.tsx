@@ -2,10 +2,11 @@ import { onCleanup, onMount, createSignal, Show, For, createEffect } from 'solid
 import { customElement, getCurrentElement, noShadowDOM } from 'solid-element'
 import type { Profile, ChatMessage } from '../types'
 import { createChat, type ChatController, getConfiguredTurnServers, setConfiguredTurnServers } from '../lib/chat'
-import { initIpfs, getNodeId, addFile, fetchFile } from '../lib/ipfs'
+import { initIpfs, getNodeId, addBytes, fetchFile } from '../lib/ipfs'
 import { buildShareUrl, renderQrToCanvas, renderQrDataUrl } from '../lib/qr'
 import { randomId, formatTime, formatBytes, shortCid, gatewayUrl, fileEmoji } from '../lib/utils'
-import { subscribeDebug, clearDebugLog, type DebugEntry } from '../lib/debug'
+import { generateRoomKey, exportKey, importKey, encryptBytes, decryptBytes, type CryptoKeyLike } from '../lib/crypto'
+import { subscribeDebug, clearDebugLog, log, type DebugEntry } from '../lib/debug'
 import {
   setPeers, setMessages,
   setRemoteStreams, localStream, setLocalStream,
@@ -43,6 +44,7 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
   const [showDebug, setShowDebug] = createSignal(false)
   const [showTurn, setShowTurn] = createSignal(false)
   const [copiedLink, setCopiedLink] = createSignal(false)
+  const [roomKey, setRoomKey] = createSignal<CryptoKeyLike | null>(null)
   let qrCanvas: HTMLCanvasElement | undefined
 
   onMount(() => {
@@ -50,6 +52,16 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
     setRole(isCreator() ? 'creator' : 'joiner')
     // Joiner starts in the "requesting" approval state until the creator decides.
     if (!isCreator()) setApprovalState('requesting')
+
+    // E2E encryption: creator generates a room key; joiner receives it later
+    // via the WebRTC data channel (onRoomKey handler) after approval.
+    if (isCreator()) {
+      generateRoomKey().then((k) => {
+        setRoomKey(k)
+        log.ok('crypto', 'room key generated (creator)')
+      })
+    }
+
     const ctrl = createChat(profile(), {
       onPeerJoin: (peer) => {
         // Joiner: when the WebRTC channel opens (peer = creator), send a join request.
@@ -146,9 +158,8 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
         pushToast('Peer found, connecting…', 'info')
       },
       onJoinError: (details) => {
-        pushToast('Connection failed — add a TURN server to pair across networks', 'error')
-        // Auto-open the TURN config modal so the user can fix it immediately.
-        setShowTurn(true)
+        pushToast('Connection failed — see debug console', 'error')
+        // TURN auto-open disabled (TURN support removed).
         // If no fully-connected peer remains, go back to waiting.
         if (Object.keys(peers()).length === 0) setConnStatus('connecting')
       },
@@ -173,7 +184,17 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
           setTimeout(() => leave(), 1800)
         }
       },
-    })
+      onRoomKey: (peerId, keyB64) => {
+        // Joiner: received the E2E room key from the creator.
+        importKey(keyB64)
+          .then((k) => {
+            setRoomKey(k)
+            log.ok('crypto', 'room key imported (joiner)')
+            pushToast('E2E encryption enabled', 'success')
+          })
+          .catch((e) => log.error('crypto', 'failed to import room key', e))
+      },
+    }, () => roomKey())
 
     setController(ctrl)
     setSelfId(ctrl.selfId)
@@ -265,7 +286,18 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
     const tid = randomId()
     addTransfer({ id: tid, name: file.name, size: file.size, dir: 'send', peerName: 'all', progress: 0, done: false, time: Date.now() })
     try {
-      const cid = await addFile(file, (r) => updateTransfer(tid, { progress: r * 0.7 }))
+      const rawBytes = new Uint8Array(await file.arrayBuffer())
+      // E2E encrypt the file content before uploading to IPFS.
+      const key = roomKey()
+      let bytesToUpload: Uint8Array = rawBytes
+      let storedSize = rawBytes.byteLength
+      if (key) {
+        const encB64 = await encryptBytes(key, rawBytes)
+        bytesToUpload = new TextEncoder().encode(encB64)
+        storedSize = bytesToUpload.byteLength
+        log.info('crypto', 'file encrypted before IPFS upload', { original: rawBytes.byteLength, encrypted: storedSize })
+      }
+      const cid = await addBytes(bytesToUpload, (r) => updateTransfer(tid, { progress: r * 0.7 }))
       emitSelfMessage({
         id: randomId(),
         peerId: controller()?.selfId ?? 'me',
@@ -340,30 +372,50 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
     const tid = randomId()
     addTransfer({ id: tid, name, size, dir: 'recv', peerName: from, progress: 0, done: false, time: Date.now() })
     try {
-      const data = await fetchFile(cid, size, (r) => updateTransfer(tid, { progress: r }))
-      const blob = new Blob([data as BlobPart])
+      const data = await fetchFile(cid, size, (r) => updateTransfer(tid, { progress: r * 0.8 }))
+      // E2E decrypt the file content (stored encrypted on IPFS).
+      let fileBytes = data
+      const key = roomKey()
+      if (key) {
+        const encB64 = new TextDecoder().decode(data)
+        fileBytes = await decryptBytes(key, encB64)
+        log.info('crypto', 'file decrypted after IPFS download', { encrypted: data.byteLength, decrypted: fileBytes.byteLength })
+      }
+      const blob = new Blob([fileBytes as BlobPart])
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
       a.download = name
-      document.body.appendChild(a)
+      // Append to the custom element's host (light DOM) so the click works.
+      const host = getCurrentElement?.() as HTMLElement | undefined
+      ;(host ?? document.body).appendChild(a)
       a.click()
       a.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      setTimeout(() => URL.revokeObjectURL(url), 2000)
       updateTransfer(tid, { progress: 1, done: true })
       pushToast(`Saved ${name}`, 'success')
     } catch (e) {
       console.error(e)
       updateTransfer(tid, { done: true })
-      pushToast('Could not fetch from IPFS', 'error')
+      pushToast('Could not fetch/decrypt file', 'error')
     }
   }
 
   /** Creator approves a pending joiner: send approval + add to peers. */
-  function approveJoiner(peerId: string) {
+  async function approveJoiner(peerId: string) {
     const req = pendingRequests().find((r) => r.peerId === peerId)
     if (!req) return
     controller()?.sendApproval(peerId, true)
+    // Send the E2E room key to the approved joiner.
+    const key = roomKey()
+    if (key) {
+      try {
+        const keyB64 = await exportKey(key)
+        controller()?.sendRoomKey(peerId, keyB64)
+      } catch (e) {
+        log.error('crypto', 'failed to export room key', e)
+      }
+    }
     setPeers((p) => ({
       ...p,
       [peerId]: {
@@ -511,7 +563,7 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
               callState={callState()} micEnabled={micEnabled()} camEnabled={camEnabled()}
               onStartAudio={() => startCall('audio')} onStartVideo={() => startCall('video')}
               onEndCall={() => endCall(false)} onToggleMic={toggleMic} onToggleCam={toggleCam}
-              onSendText={handleSendText} onDownload={handleDownload}
+              onSendText={handleSendText} onSendFile={handleSendFile} onDownload={handleDownload}
               setShowDebug={setShowDebug} showDebug={showDebug()}
               debugEntries={debugEntries()} onClearDebug={() => clearDebugLog()}
             />
@@ -551,9 +603,7 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
         </For>
       </div>
 
-      <Show when={showTurn()}>
-        <TurnConfigModal onClose={() => setShowTurn(false)} onSaved={() => { pushToast('TURN saved — reload the page to apply', 'success') }} />
-      </Show>
+      {/* TURN modal removed — TURN support disabled. */}
 
       {/* Joiner approval overlay — shown until the creator approves/denies */}
       <Show when={!isCreator() && approvalState() !== 'approved'}>
@@ -957,9 +1007,7 @@ function SidebarContent(props: {
             {props.ipfsLabel}
           </span>
           <div class="flex gap-1">
-            <button type="button" onClick={props.onOpenTurn} class="rounded border border-zinc-200 px-2 py-0.5 text-[10px] font-medium text-zinc-500 hover:bg-zinc-50" title="Configure TURN servers (for cross-network pairing)">
-              🔧 TURN
-            </button>
+            {/* TURN button removed — TURN support disabled (files via IPFS gateway, text via WebRTC) */}
             <button type="button" onClick={() => props.setShowDebug(!props.showDebug)} class="rounded border border-zinc-200 px-2 py-0.5 text-[10px] font-medium text-zinc-500 hover:bg-zinc-50">
               🐛 Debug
             </button>
@@ -1096,6 +1144,7 @@ function ChatPane(props: {
   onStartAudio: () => void; onStartVideo: () => void; onEndCall: () => void
   onToggleMic: () => void; onToggleCam: () => void
   onSendText: (t: string) => void
+  onSendFile: (f: File) => void
   onDownload: (cid: string, name: string, size: number, from: string) => void
   showDebug: boolean; setShowDebug: (v: boolean) => void
   debugEntries: DebugEntry[]; onClearDebug: () => void
@@ -1103,6 +1152,7 @@ function ChatPane(props: {
   const [text, setText] = createSignal('')
   let textarea: HTMLTextAreaElement | undefined
   let scrollEl: HTMLDivElement | undefined
+  let chatFileInput: HTMLInputElement | undefined
   const hasRemote = () => Object.keys(props.remoteStreams).length > 0
   const inCall = () => props.callState !== 'idle'
   const showTiles = () => inCall() || hasRemote()
@@ -1210,17 +1260,34 @@ function ChatPane(props: {
         </div>
       </div>
 
-      {/* Input */}
+      {/* Input — pill-shaped bar with + / attach on the left, send on the right */}
       <div class="shrink-0 border-t border-zinc-200 bg-white px-4 py-3 sm:px-6">
-        <div class="mx-auto flex max-w-2xl items-end gap-2">
+        <div class="mx-auto flex max-w-2xl items-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1.5 transition focus-within:border-zinc-400 focus-within:bg-white">
+          <input ref={chatFileInput} type="file" class="hidden" multiple onChange={(e) => { const fs = (e.currentTarget as HTMLInputElement).files; if (fs) for (const f of Array.from(fs)) props.onSendFile(f); if (chatFileInput) chatFileInput.value = '' }} />
+          {/* + button (attachment trigger) */}
+          <button
+            type="button"
+            onClick={() => chatFileInput?.click()}
+            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-900"
+            title="Attach file"
+          >
+            <svg viewBox="0 0 24 24" fill="none" class="h-5 w-5"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+          </button>
           <textarea
-            ref={textarea} value={text()} rows={1} placeholder="Type a message…"
+            ref={textarea} value={text()} rows={1} placeholder="Message…"
             onInput={(e) => { setText(e.currentTarget.value); onInput() }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-            class="min-h-10 max-h-[140px] w-full flex-1 resize-none rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2 text-sm leading-5 outline-none transition focus:border-zinc-900 focus:bg-white focus:ring-2 focus:ring-zinc-900/10"
+            class="min-h-8 max-h-[120px] w-full flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 outline-none placeholder:text-zinc-400"
           />
-          <button type="button" onClick={send} disabled={!text().trim()} class="flex h-10 w-10 shrink-0 items-center justify-center self-end rounded-xl bg-zinc-900 text-white transition hover:bg-zinc-800 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30" title="Send">
-            <svg viewBox="0 0 24 24" fill="none" class="h-5 w-5"><path d="m22 2-7 20-4-9-9-4 20-7Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          {/* Send button (circular, right) */}
+          <button
+            type="button"
+            onClick={send}
+            disabled={!text().trim()}
+            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white transition hover:bg-zinc-800 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
+            title="Send"
+          >
+            <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4"><path d="M12 19V5m0 0-6 6m6-6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>
         </div>
       </div>

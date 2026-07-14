@@ -45,28 +45,38 @@ const IPFS_GATEWAYS = [
 ]
 
 /**
- * Add a File to the local Helia IPFS node and return its CID string.
- * Also kicks off a background "publish" to public gateways (via a HEAD then
- * GET fetch) so the file is reachable by other peers through the gateways —
- * browser-to-browser Helia bitswap is unreliable without direct libp2p
- * peering, so this makes downloads dependable.
+ * Add raw bytes to the local Helia IPFS node and return its CID string.
+ * Also kicks off a background "publish" to public gateways so the file is
+ * reachable by other peers through the gateways — browser-to-browser Helia
+ * bitswap is unreliable without direct libp2p peering, so this makes downloads
+ * dependable. Callers should encrypt the bytes first (E2E).
  */
-export async function addFile(
-  file: File,
+export async function addBytes(
+  bytes: Uint8Array,
   onProgress?: (ratio: number) => void,
 ): Promise<string> {
   const node = await initIpfs()
   const ufs = unixfs(node)
   onProgress?.(0)
-  const buf = new Uint8Array(await file.arrayBuffer())
-  const cid = await ufs.addBytes(buf)
+  const cid = await ufs.addBytes(bytes)
   const cidStr = cid.toString()
   onProgress?.(1)
   // Background-publish: ask a public gateway to fetch & cache the CID so it's
-  // available to other peers. We provide the bytes directly (the local Helia
-  // node can serve them to the gateway over bitswap) — best-effort, no await.
-  publishToGateway(cidStr, buf).catch(() => {})
+  // available to other peers. Best-effort, no await.
+  publishToGateway(cidStr, bytes).catch(() => {})
   return cidStr
+}
+
+/**
+ * Add a File to IPFS. Convenience wrapper around addBytes that reads the file
+ * into a Uint8Array first.
+ */
+export async function addFile(
+  file: File,
+  onProgress?: (ratio: number) => void,
+): Promise<string> {
+  const buf = new Uint8Array(await file.arrayBuffer())
+  return addBytes(buf, onProgress)
 }
 
 /**
