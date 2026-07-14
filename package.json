@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "fybeam — P2P file sharing & chat over WebRTC + IPFS (Vite + SolidJS).",
+  "description": "fybeam — P2P file sharing & chat over WebRTC + IPFS (Vite + Web Components).",
   "scripts": {
     "dev": "vite build && vite preview --port 3000 --host --strictPort 2>&1 | tee dev.log",
     "build": "vite build",
@@ -16,7 +16,6 @@
     "helia": "^5",
     "multiformats": "^14.0.4",
     "qrcode": "^1.5.4",
-    "solid-js": "^1.9.14",
     "trystero": "^0.25.3"
   },
   "devDependencies": {
@@ -26,7 +25,6 @@
     "tailwindcss": "^4.3.2",
     "typescript": "^7.0.2",
     "vite": "^8.1.4",
-    "vite-plugin-node-polyfills": "^0.28.0",
-    "vite-plugin-solid": "^2.11.12"
+    "vite-plugin-node-polyfills": "^0.28.0"
   }
 }

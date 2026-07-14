@@ -1,13 +1,11 @@
 import { defineConfig } from 'vite'
-import solid from 'vite-plugin-solid'
 import tailwindcss from '@tailwindcss/vite'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
-// Pure Vite + SolidJS app served from the project root on port 3000.
+// Pure Vite + vanilla Web Components (no framework). Served from the repo root.
 export default defineConfig({
   base: '/',
   plugins: [
-    solid(),
     tailwindcss(),
     // Helia / libp2p reference Node-style globals (Buffer, process, global).
     nodePolyfills({
