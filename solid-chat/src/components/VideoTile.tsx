@@ -6,10 +6,8 @@ export default function VideoTile(props: {
   muted?: boolean
   label: string
   color: string
-  /** Whether the stream contains a video track. */
   video: boolean
   camOff?: boolean
-  class?: string
 }) {
   let video: HTMLVideoElement | undefined
 
@@ -17,7 +15,6 @@ export default function VideoTile(props: {
     const s = props.stream
     if (video && s) {
       video.srcObject = s
-      // Ensure playback starts (some browsers need an explicit play()).
       video.play().catch(() => {})
     }
   })
@@ -25,9 +22,7 @@ export default function VideoTile(props: {
   const showAvatar = () => !props.video || props.camOff
 
   return (
-    <div
-      class={`relative overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 ${props.class ?? ''}`}
-    >
+    <div class="relative h-24 w-32 shrink-0 overflow-hidden rounded-xl border border-zinc-200 bg-zinc-900 sm:h-28 sm:w-40">
       <video
         ref={video}
         autoplay
@@ -37,19 +32,19 @@ export default function VideoTile(props: {
         classList={{ 'opacity-0': showAvatar() }}
       />
       <Show when={showAvatar()}>
-        <div class="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-zinc-800 to-zinc-900">
-          <div
-            class="flex h-12 w-12 items-center justify-center rounded-full text-sm font-bold text-zinc-950"
+        <div class="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-zinc-700 to-zinc-900">
+          <span
+            class="flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold text-white"
             style={{ background: props.color }}
           >
             {initials(props.label)}
-          </div>
+          </span>
         </div>
       </Show>
-      <div class="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/70 to-transparent px-2 py-1.5">
+      <div class="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/70 to-transparent px-2 py-1">
         <span class="truncate text-[11px] font-medium text-white">{props.label}</span>
         <Show when={props.muted}>
-          <span class="rounded bg-black/40 px-1 text-[9px] uppercase text-zinc-300">you</span>
+          <span class="rounded bg-black/40 px-1 text-[9px] uppercase text-zinc-200">you</span>
         </Show>
       </div>
     </div>

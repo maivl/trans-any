@@ -3,12 +3,10 @@ import solid from 'vite-plugin-solid'
 import tailwindcss from '@tailwindcss/vite'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
-// The SolidJS app is built statically and served from the Next.js `public/chat/`
-// folder, then embedded full-screen via a same-origin iframe on the Next.js
-// `/` route. `base: '/chat/'` ensures all emitted assets reference `/chat/...`
-// which Next.js serves as static files.
+// Pure Vite + SolidJS app — served directly on port 3000 (no Next.js).
+// `base: '/'` so the app lives at the root.
 export default defineConfig({
-  base: '/chat/',
+  base: '/',
   plugins: [
     solid(),
     tailwindcss(),
@@ -18,8 +16,17 @@ export default defineConfig({
       exclude: ['fs', 'path', 'crypto', 'os', 'child_process'],
     }),
   ],
+  server: {
+    host: true,
+    port: 3000,
+    strictPort: true,
+    // Allow the Caddy gateway (and any proxy) to forward requests.
+    allowedHosts: true,
+    // WebSocket (HMR) through the gateway.
+    ws: true,
+  },
   build: {
-    outDir: '../public/chat',
+    outDir: 'dist',
     emptyOutDir: true,
     target: 'esnext',
     chunkSizeWarningLimit: 6000,

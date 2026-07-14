@@ -1,8 +1,19 @@
 /** Small utility helpers shared across the app. */
 
 const PALETTE = [
-  '#10b981', '#f43f5e', '#f59e0b', '#a855f7', '#06b6d4',
-  '#84cc16', '#ec4899', '#14b8a6', '#eab308', '#8b5cf6',
+  '#0ea5e9', '#f43f5e', '#f59e0b', '#8b5cf6', '#10b981',
+  '#ec4899', '#14b8a6', '#6366f1', '#eab308', '#06b6d4',
+]
+
+const ROOM_WORDS_A = [
+  'Forest', 'Ocean', 'Amber', 'Crimson', 'Velvet', 'Northern', 'Quiet', 'Silver',
+  'Lunar', 'Ember', 'Cobalt', 'Golden', 'Hidden', 'Distant', 'Bright', 'Still',
+  'Wild', 'Coral', 'Onyx', 'Aurora',
+]
+const ROOM_WORDS_B = [
+  'Star', 'Tide', 'Grove', 'Meadow', 'Echo', 'Spark', 'Drift', 'Hollow',
+  'Frost', 'Glow', 'Pine', 'Cedar', 'Wave', 'Peak', 'Field', 'Reef',
+  'Lark', 'Bay', 'Mist', 'Shore',
 ]
 
 export function randomId(): string {
@@ -13,12 +24,19 @@ export function randomId(): string {
 }
 
 export function randomRoomCode(): string {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const alphabet = 'abcdefghijkmnpqrstuvwxyz23456789'
   let out = ''
   for (let i = 0; i < 6; i++) {
     out += alphabet[Math.floor(Math.random() * alphabet.length)]
   }
   return out
+}
+
+/** A poetic two-word room name, e.g. "Forest Star". */
+export function randomRoomName(): string {
+  const a = ROOM_WORDS_A[Math.floor(Math.random() * ROOM_WORDS_A.length)]
+  const b = ROOM_WORDS_B[Math.floor(Math.random() * ROOM_WORDS_B.length)]
+  return `${a} ${b}`
 }
 
 /** Deterministic color for a given id. */
@@ -65,7 +83,12 @@ export function gatewayUrl(cid: string): string {
   return `https://dweb.link/ipfs/${cid}`
 }
 
-/** Clamp helper. */
-export function clamp(n: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, n))
+export function fileEmoji(mime: string): string {
+  if (mime.startsWith('image/')) return '🖼️'
+  if (mime.startsWith('video/')) return '🎬'
+  if (mime.startsWith('audio/')) return '🎵'
+  if (mime.includes('pdf')) return '📕'
+  if (mime.includes('zip') || mime.includes('compressed')) return '🗜️'
+  if (mime.startsWith('text/')) return '📄'
+  return '📄'
 }

@@ -1,5 +1,15 @@
 import { createSignal } from 'solid-js'
-import type { PeerInfo, ChatMessage, CallState, IpfsStatus, Toast } from './types'
+import type {
+  PeerInfo,
+  ChatMessage,
+  CallState,
+  IpfsStatus,
+  Toast,
+  Transfer,
+  ReceivedFile,
+  Tab,
+  ConnStatus,
+} from './types'
 
 /** Global reactive store built on Solid signals. */
 
@@ -14,8 +24,13 @@ export const [camEnabled, setCamEnabled] = createSignal(true)
 export const [ipfsStatus, setIpfsStatus] = createSignal<IpfsStatus>('init')
 export const [ipfsNodeId, setIpfsNodeId] = createSignal<string>('')
 
-export const [connected, setConnected] = createSignal(false)
+export const [connStatus, setConnStatus] = createSignal<ConnStatus>('connecting')
 export const [selfId, setSelfId] = createSignal<string>('')
+
+export const [tab, setTab] = createSignal<Tab>('chat')
+
+export const [transfers, setTransfers] = createSignal<Transfer[]>([])
+export const [received, setReceived] = createSignal<ReceivedFile[]>([])
 
 export const [toasts, setToasts] = createSignal<Toast[]>([])
 
@@ -27,6 +42,18 @@ export function pushToast(text: string, kind: Toast['kind'] = 'info') {
   }, 3600)
 }
 
+export function addTransfer(t: Transfer) {
+  setTransfers((s) => [t, ...s])
+}
+
+export function updateTransfer(id: string, patch: Partial<Transfer>) {
+  setTransfers((s) => s.map((t) => (t.id === id ? { ...t, ...patch } : t)))
+}
+
+export function addReceived(f: ReceivedFile) {
+  setReceived((s) => [f, ...s])
+}
+
 export function resetStore() {
   setPeers({})
   setMessages([])
@@ -35,5 +62,8 @@ export function resetStore() {
   setCallState('idle')
   setMicEnabled(true)
   setCamEnabled(true)
-  setConnected(false)
+  setConnStatus('connecting')
+  setTransfers([])
+  setReceived([])
+  setTab('chat')
 }

@@ -1,5 +1,5 @@
 import { joinRoom } from 'trystero'
-import type { PeerInfo, ChatMessage, WireMessage, WireMedia, Profile } from '../types'
+import type { PeerInfo, ChatMessage, WireMessage, WireMedia, WireProfile, Profile } from '../types'
 import { colorFromId, randomId } from './utils'
 
 type RoomHandle = ReturnType<typeof joinRoom>
@@ -70,7 +70,7 @@ export function createChat(
   const room = joinRoom(config as never, profile.room)
 
   // Trystero v0.25: makeAction returns an object with `.send` and `.onMessage`.
-  const profileAction = room.makeAction<{ name: string; color: string }>('profile')
+  const profileAction = room.makeAction<WireProfile>('profile')
   const msgAction = room.makeAction<WireMessage>('msg')
   const mediaAction = room.makeAction<WireMedia>('media')
 
