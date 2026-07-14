@@ -127,3 +127,22 @@ Stage Summary:
 - Agent Browser verification: app renders (no Next.js); inline QR canvas present in sidebar with "Share room"/"Scan to open" copy and Copy link / Save QR buttons (no modal); two-session test — long 100-char unbroken string wraps inside the bubble (bubbleW == parentW 538px, wraps:true, no overflow) and multi-line `\n` text is preserved (bubble white-space:pre-wrap). `eslint` clean; dev.log clean.
 - Git: committed `6d16b9e refactor: drop Next.js (Vite-only), inline QR display, robust text wrapping` (67 files changed, -6298/+123 lines) and pushed to https://github.com/maivl/trans-any.git main (remote head 6d16b9e). Verified remote has no `src/`, `next.config`, `.next`, or `components.json` and no `QRShareModal.tsx`.
 - The provided PAT was passed via `http.extraheader` for the push only (not stored in config).
+
+---
+Task ID: 6
+Agent: main (Z.ai Code)
+Task: (1) Shrink the QR code. (2) Fix `npm run build` failing with `vite: command not found` (exit 127).
+
+Work Log:
+- Root cause of build failure: the root `package.json` (after the Next.js removal) had NO dependencies, while the Vite project + its deps lived in `solid-chat/`. Platforms run `npm install` + `npm run build` at the root, so `vite` was never installed and `cd solid-chat && bun run build` → `vite build` → `vite: command not found` (127).
+- Fix: flattened the Vite + SolidJS project from `solid-chat/` to the repo ROOT.
+  - Moved `solid-chat/src` → `src`, `solid-chat/index.html` → `index.html`, `solid-chat/vite.config.ts` → `vite.config.ts`. Removed the now-empty `solid-chat/` and the stale `public/chat/`.
+  - Root `package.json` now holds all deps (solid-js, trystero, helia, @helia/unixfs, multiformats, qrcode + dev: vite, vite-plugin-solid, tailwindcss, @tailwindcss/vite, vite-plugin-node-polyfills, typescript, eslint) with scripts `dev`/`build`/`preview`/`lint`. `build` = `vite build`, `dev` = `vite build && vite preview --port 3000`.
+  - Verified `npm run build` runs `vite build` directly at the root and succeeds (vite binary now at `node_modules/.bin/vite`).
+  - Updated root `tsconfig.json` (SolidJS jsx), `eslint.config.mjs` (plain, ignores dist/node_modules), `.gitignore` (`/dist`, removed solid-chat references).
+- QR shrink: reduced the inline sidebar QR canvas from `h-44 w-44` (176px, rendered at 224px) to `h-28 w-28` (112px, rendered at 112px) in `src/components/Sidebar.tsx`. Verified rendered size = 112×112px.
+
+Stage Summary:
+- `npm run build` → `vite build` succeeds at root (dist/ emitted). `bun run lint` clean. `vite preview` on :3000 serving HTTP 200 (kept alive via subshell pattern).
+- Agent Browser: app renders; inline QR confirmed 112×112px (down from 176px); no errors.
+- Git: committed `a85e8c3 fix: flatten Vite project to root (fixes npm run build) + shrink QR`, pushed to https://github.com/maivl/trans-any.git main. Remote verified: `src/`, `index.html`, `vite.config.ts`, `package.json` at root; `solid-chat/` removed. PAT passed via http.extraheader for the push only.
