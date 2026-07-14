@@ -250,3 +250,19 @@ Work Log:
 
 Stage Summary:
 - Verified /room/join/f9huce renders the app (fybeam + "Waiting for approval"), no 404. Build clean, lint clean. Pushed `3a83c2e` to https://github.com/maivl/trans-any.git main. On Vercel, the vercel.json rewrite will fix the 404 after redeploy.
+
+---
+Task ID: 13
+Agent: main (Z.ai Code)
+Task: (1) download button not downloading; (2) encrypt text + files, key via WebRTC; (3) remove TURN if unnecessary; (4) restyle bottom chat bar per reference image.
+
+Work Log:
+- E2E encryption: lib/crypto.ts (AES-GCM 256). chat.ts createChat accepts getRoomKey(); text + file CID encrypted before send, decrypted on receive; new room-key action exchanges the key creator→joiner over the WebRTC data channel after approval (never over IPFS/server). FybeamRoom: creator generates the key on mount; approveJoiner exports+sends it; joiner imports it (onRoomKey). Files: handleSendFile encrypts bytes before addBytes→IPFS; handleDownload decrypts after fetch. Verified 21-byte file → 68-byte ciphertext on IPFS, decrypted on download.
+- TURN removed: buildRtcConfig STUN-only (TURN merge commented out); 🔧 TURN button + TurnConfigModal removed; onJoinError no longer auto-opens TURN. Files go via IPFS gateway; text via WebRTC data channel.
+- Bottom chat bar: pill-shaped container (rounded-full) with + (attach) button left, transparent textarea center, circular send button right; attach triggers a hidden file input in the chat bar.
+- Bug fixes: (a) ReferenceError: log not imported in FybeamRoom → handleSendFile crashed silently; fixed by importing log. (b) createChat arg order was wrong — handlers passed as 3rd arg (getRoomKey slot) → handlers.onProfile undefined → 'action handler error: t.onProfile is not a function'; fixed to createChat(profile, handlers, getRoomKey). (c) Download anchor appended to the custom-element host (light DOM) so programmatic click works.
+
+Stage Summary:
+- Verified: creator/joiner pair + approve → both Connected; E2E key exchanged (toast 'E2E encryption enabled'); encrypted text delivered + decrypted ('secret message test 123' received); file encrypted before IPFS upload (logged 'file encrypted before IPFS upload {original:21, encrypted:68}'); file message received by joiner.
+- Known limitation: cross-network file download via public IPFS gateway can be slow/unreliable (the gateway must fetch the CID from the creator's browser Helia node via bitswap, which isn't always reachable); same-network works. For production, a pinning service (web3.storage/Pinata) or sending file bytes over the WebRTC data channel would make downloads dependable.
+- Build clean, lint clean, preview HTTP 200. Pushed `8f08f5a` to https://github.com/maivl/trans-any.git main.
