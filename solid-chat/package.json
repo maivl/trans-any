@@ -1,0 +1,27 @@
+{
+  "name": "solid-chat",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5173 --host",
+    "build": "vite build",
+    "preview": "vite preview --port 4173"
+  },
+  "dependencies": {
+    "@helia/unixfs": "^4",
+    "@trystero-p2p/torrent": "^0.25.3",
+    "helia": "^5",
+    "multiformats": "^14.0.4",
+    "solid-js": "^1.9.14",
+    "trystero": "^0.25.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.2",
+    "tailwindcss": "^4.3.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.4",
+    "vite-plugin-node-polyfills": "^0.28.0",
+    "vite-plugin-solid": "^2.11.12"
+  }
+}
