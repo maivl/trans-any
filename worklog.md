@@ -111,3 +111,19 @@ Stage Summary:
   - ✅ Recipient enters name → Join → both peers Connected (pairing succeeded).
 - Repo: https://github.com/maivl/trans-any.git — branch `main`, head commit `02f5c12`, 126 files (full solid-chat source + config + README + root project files; node_modules & build output gitignored).
 - Note: the provided GitHub token was used only for the push and then removed from the local remote URL.
+
+---
+Task ID: 5
+Agent: main (Z.ai Code)
+Task: Drop all Next.js usage (Vite only); show the QR code inline (no modal); ensure chat text wraps.
+
+Work Log:
+- Next.js removal: deleted `src/app` (page/layout/api/globals.css), `src/components/ui` (shadcn set), `src/hooks`, `src/lib`, `.next`, `next.config.ts`, `postcss.config.mjs`, `components.json`, `tailwind.config.ts`, `next-env.d.ts`. Rewrote root `package.json` (name `trans-any`, only `dev`/`build`/`preview`/`lint` scripts, all next/react/shadcn deps removed). Rewrote root `tsconfig.json` (plain ESNext, includes solid-chat/src). Rewrote `eslint.config.mjs` to drop `eslint-config-next` (no longer a dep) — now just ignores sub-dirs. `bun run lint` passes. Verified the served page contains zero "next" references.
+- Inline QR: removed `QRShareModal.tsx` and the sidebar QR icon button that opened it. Added an always-visible "Share room" block in the Sidebar (below the room/status block): a 176px QR canvas (renders via `renderQrToCanvas` in a `createEffect` + `onMount`), a "Scan to open…" caption, and Copy link / Save QR action buttons + the share URL preview. The QR encodes `${origin}${pathname}?room=<code>` so scanning opens the app with the room pre-filled (JoinScreen already reads `?room=`).
+- Text wrapping: strengthened chat message bubbles — `whitespace-pre-wrap` (preserves `\n` line breaks) + `break-words` + `[overflow-wrap:anywhere]` (breaks long unbroken tokens) + `min-w-0 max-w-full` on the bubble, and `min-w-0` on the `max-w-[80%]` flex parent so flexbox allows the child to shrink and wrap. File-name in file bubbles changed from `truncate` to `break-words [overflow-wrap:anywhere]` so long file names wrap too.
+- Rebuilt (`vite build`), restarted `vite preview` on :3000 (HTTP 200). `bun run lint` clean.
+
+Stage Summary:
+- Agent Browser verification: app renders (no Next.js); inline QR canvas present in sidebar with "Share room"/"Scan to open" copy and Copy link / Save QR buttons (no modal); two-session test — long 100-char unbroken string wraps inside the bubble (bubbleW == parentW 538px, wraps:true, no overflow) and multi-line `\n` text is preserved (bubble white-space:pre-wrap). `eslint` clean; dev.log clean.
+- Git: committed `6d16b9e refactor: drop Next.js (Vite-only), inline QR display, robust text wrapping` (67 files changed, -6298/+123 lines) and pushed to https://github.com/maivl/trans-any.git main (remote head 6d16b9e). Verified remote has no `src/`, `next.config`, `.next`, or `components.json` and no `QRShareModal.tsx`.
+- The provided PAT was passed via `http.extraheader` for the push only (not stored in config).
