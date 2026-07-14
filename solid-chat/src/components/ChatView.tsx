@@ -164,7 +164,7 @@ function Row(props: {
           </span>
         </Show>
       </div>
-      <div class={`flex max-w-[80%] flex-col ${props.self ? 'items-end' : 'items-start'}`}>
+      <div class={`flex min-w-0 max-w-[80%] flex-col ${props.self ? 'items-end' : 'items-start'}`}>
         <Show when={props.showHeader}>
           <div class="mb-0.5 flex items-center gap-1.5 px-1">
             <span class="text-xs font-medium text-zinc-700">{props.self ? 'You' : props.m.name}</span>
@@ -175,7 +175,7 @@ function Row(props: {
           when={props.m.kind === 'file' && props.m.file}
           fallback={
             <div
-              class="whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm leading-relaxed"
+              class="min-w-0 max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-2xl px-3 py-2 text-sm leading-relaxed"
               classList={{
                 'rounded-br-md bg-zinc-900 text-white': props.self,
                 'rounded-bl-md border border-zinc-200 bg-white text-zinc-800': !props.self,
@@ -209,7 +209,7 @@ function FileBubble(props: {
       <div class="flex items-center gap-2.5">
         <span class="text-xl">{fileEmoji(props.file.mime)}</span>
         <div class="min-w-0 flex-1">
-          <div class="truncate text-sm font-medium">{props.file.name}</div>
+          <div class="min-w-0 break-words [overflow-wrap:anywhere] text-sm font-medium">{props.file.name}</div>
           <div class={props.self ? 'text-[11px] text-zinc-400' : 'text-[11px] text-zinc-400'}>
             {formatBytes(props.file.size)}
           </div>
