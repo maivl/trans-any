@@ -146,3 +146,21 @@ Stage Summary:
 - `npm run build` → `vite build` succeeds at root (dist/ emitted). `bun run lint` clean. `vite preview` on :3000 serving HTTP 200 (kept alive via subshell pattern).
 - Agent Browser: app renders; inline QR confirmed 112×112px (down from 176px); no errors.
 - Git: committed `a85e8c3 fix: flatten Vite project to root (fixes npm run build) + shrink QR`, pushed to https://github.com/maivl/trans-any.git main. Remote verified: `src/`, `index.html`, `vite.config.ts`, `package.json` at root; `solid-chat/` removed. PAT passed via http.extraheader for the push only.
+
+---
+Task ID: 7
+Agent: main (Z.ai Code)
+Task: Keep SolidJS but expose components as Web Components; simplify (remove home screen); initiator auto-generates room code, receiver joins via share link/QR; random name pool; add debug console for pairing (user reports pairing never succeeded).
+
+Work Log:
+- Web Components with SolidJS: installed `solid-element`; the whole chat UI is now a single `<fybeam-room>` custom element (`src/components/FybeamRoom.tsx`) built via `customElement('fybeam-room', {room,name,color,roomName}, FybeamRoom)` + `noShadowDOM()` so the document's Tailwind styles apply to the light-DOM content. index.tsx creates the element, sets attributes (room/name/color/room-name), and listens for a `leave` CustomEvent.
+- No home/join screen: index.tsx auto-joins on load. Initiator (no ?room=) generates a random room code + random name and pushes the room into the URL (replaceState). Receiver (?room=<code>) joins that room. Both get a random friendly name + poetic room name.
+- Random names: added `randomName()` to utils (pool: Falcon, Maple, Nova, … + 2-digit suffix); kept `randomRoomName()` (Golden Cedar, Ocean Spark, …).
+- Debug console for pairing: new `lib/debug.ts` (ring buffer + console + UI subscription). chat.ts now logs: relay connect/error/close, presence announce/peer-join/peer-leave, profile send/received, message received, media add/stream, and per-peer ICE state via `room.getPeers()` + RTCPeerConnection event listeners (icecandidate with type host/srflx/relay/prflx, gathering, ice/conn/signaling state, datachannel/track open). The 🐛 Debug panel (toggle from sidebar IPFS row or chat call-bar) shows timestamped, color-coded events; the Devices list also shows each peer's live `ice:` state.
+- Simplified: removed App.tsx, JoinScreen, and the old standalone ChatView/FilesView/Sidebar/MessageInput/Toaster/VideoTile/RoomShell (all inlined into FybeamRoom). Kept the same light fyDrop-style UI.
+
+Stage Summary:
+- Build clean (~1.64 MB JS / 489 KB gzip); `bun run lint` clean; `vite preview` on :3000 HTTP 200.
+- Agent Browser end-to-end (two sessions, mDNS-off flag for this headless sandbox): initiator auto-joined with room `brz8b4` + name Maple96, URL became `?room=brz8b4`, share QR + "Signaling 9/9 relays" visible; Bob opened the share link → auto-joined (no home screen) with name Haven11; both reached "Connected"; peer ICE state shown inline as `ice:connected`; 🐛 Debug console showed relay connects, `presence peer join`, `profile announce/sent/received`, `ice watching peer pc {ice:connected, conn:connected}`; cross-peer text message delivered.
+- The user's pairing failures are most likely environmental (relay reachability / mDNS host-candidate resolution / symmetric NAT). The new debug console + inline ICE state let them see exactly where it stalls: relay count, presence announce, ICE candidate types, and ice/conn states.
+- Git: committed `4bca2b8` and pushed to https://github.com/maivl/trans-any.git main. PAT passed via http.extraheader (not stored).
