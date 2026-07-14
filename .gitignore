@@ -54,4 +54,5 @@ server.log
 /skills/
 
 # Vite build output
-/disttool-results
+/dist
+tool-results
