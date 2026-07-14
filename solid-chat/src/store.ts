@@ -27,6 +27,10 @@ export const [ipfsNodeId, setIpfsNodeId] = createSignal<string>('')
 export const [connStatus, setConnStatus] = createSignal<ConnStatus>('connecting')
 export const [selfId, setSelfId] = createSignal<string>('')
 
+export const [signaling, setSignaling] = createSignal<{ open: number; total: number }>({ open: 0, total: 0 })
+/** True after the user has waited a while with no peer joining. */
+export const [waitingLong, setWaitingLong] = createSignal(false)
+
 export const [tab, setTab] = createSignal<Tab>('chat')
 
 export const [transfers, setTransfers] = createSignal<Transfer[]>([])
@@ -63,6 +67,8 @@ export function resetStore() {
   setMicEnabled(true)
   setCamEnabled(true)
   setConnStatus('connecting')
+  setSignaling({ open: 0, total: 0 })
+  setWaitingLong(false)
   setTransfers([])
   setReceived([])
   setTab('chat')

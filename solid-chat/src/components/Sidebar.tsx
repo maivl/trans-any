@@ -1,7 +1,7 @@
 import { For, Show, createSignal } from 'solid-js'
 import type { Profile } from '../types'
 import {
-  peers, connStatus, ipfsStatus, tab, setTab, transfers, received,
+  peers, connStatus, ipfsStatus, signaling, waitingLong, tab, setTab, transfers, received,
 } from '../store'
 import { formatBytes, formatTime, fileEmoji } from '../lib/utils'
 
@@ -62,6 +62,19 @@ export default function Sidebar(props: { profile: Profile; onLeave: () => void }
           <span class={`h-1.5 w-1.5 rounded-full ${statusInfo().dot}`} />
           {statusInfo().label}
         </div>
+        {/* Signaling relay count */}
+        <div class="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-400">
+          <span class="h-1.5 w-1.5 rounded-full bg-sky-400" />
+          Signaling {signaling().open}/{signaling().total} relays
+        </div>
+        {/* Waiting hint */}
+        <Show when={waitingLong() && connStatus() !== 'connected'}>
+          <div class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] leading-relaxed text-amber-700">
+            No peer found yet. Make sure both use the same room code and are
+            online. Pairing can take ~10s. If it stays stuck, your network may
+            be blocking the signaling relays.
+          </div>
+        </Show>
       </div>
 
       {/* Scrollable middle: devices / transfers / received */}

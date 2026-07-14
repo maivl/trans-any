@@ -9,6 +9,7 @@ import {
   callState, setCallState, micEnabled, setMicEnabled, camEnabled, setCamEnabled,
   ipfsStatus, setIpfsStatus, ipfsNodeId, setIpfsNodeId,
   connStatus, setConnStatus, setSelfId,
+  setSignaling, setWaitingLong, peers,
   tab, setTab, addTransfer, updateTransfer, addReceived,
   pushToast, resetStore,
 } from '../store'
@@ -140,6 +141,23 @@ export default function RoomShell(props: { profile: Profile; onLeave: () => void
         self: true,
       },
     ])
+
+    // Poll signaling-relay connection count for the sidebar indicator.
+    const sigTimer = setInterval(() => {
+      const info = ctrl.getSignalingInfo()
+      setSignaling(info)
+    }, 2000)
+    setSignaling(ctrl.getSignalingInfo())
+
+    // After ~18s with no peer, surface a "still waiting" hint.
+    const waitTimer = setTimeout(() => {
+      if (Object.keys(peers()).length === 0) setWaitingLong(true)
+    }, 18000)
+
+    onCleanup(() => {
+      clearInterval(sigTimer)
+      clearTimeout(waitTimer)
+    })
   })
 
   onCleanup(() => {

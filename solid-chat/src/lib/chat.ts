@@ -1,8 +1,13 @@
-import { joinRoom } from 'trystero'
+import { joinRoom, getRelaySockets } from 'trystero'
 import type { PeerInfo, ChatMessage, WireMessage, WireMedia, WireProfile, Profile } from '../types'
 import { colorFromId, randomId } from './utils'
 
 type RoomHandle = ReturnType<typeof joinRoom>
+
+export interface SignalingInfo {
+  open: number
+  total: number
+}
 
 export interface ChatController {
   room: RoomHandle
@@ -17,6 +22,8 @@ export interface ChatController {
   addStream: (stream: MediaStream) => void
   /** Stop streaming a media stream. */
   removeStream: (stream: MediaStream) => void
+  /** Current signaling-relay connection count (open / total). */
+  getSignalingInfo: () => SignalingInfo
   leave: () => void
 }
 
@@ -32,17 +39,21 @@ export interface ChatHandlers {
 const APP_ID = 'zai-trystero-p2p-chat-v1'
 
 /**
- * Curated, known-reliable Nostr relays used for signaling. Trystero's default
- * picks a deterministic subset of 5 from a long list (some flaky); pinning a
- * hand-picked set maximizes the chance both peers share healthy relays.
+ * Curated, known-reliable Nostr relays used for signaling. A broad set
+ * maximizes the chance both peers share at least one working relay even if
+ * some are blocked or rate-limited on their network. damus is excluded
+ * (aggressively rate-limits Trystero's announces).
  */
 const RELAY_URLS = [
-  'wss://relay.damus.io',
   'wss://nos.lol',
   'wss://relay.nostrdice.com',
   'wss://nostr.data.haus',
   'wss://relay.mostr.pub',
   'wss://nostr-01.yakihonne.com',
+  'wss://relay.snort.social',
+  'wss://nostr.wine',
+  'wss://nostr.mom',
+  'wss://relay.nostr.net',
 ]
 
 /** STUN servers for reflexive ICE candidates. */
@@ -51,6 +62,7 @@ const RTC_CONFIG: RTCConfiguration = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
   ],
 }
 
@@ -166,6 +178,17 @@ export function createChat(
     }
   }
 
+  const getSignalingInfo = (): SignalingInfo => {
+    try {
+      const sockets = Object.values(getRelaySockets()) as { readyState?: number }[]
+      const total = sockets.length
+      const open = sockets.filter((s) => s && s.readyState === 1).length
+      return { open, total }
+    } catch {
+      return { open: 0, total: 0 }
+    }
+  }
+
   // Announce ourselves to anyone already in the room.
   announceProfile()
 
@@ -177,6 +200,7 @@ export function createChat(
     sendMedia,
     addStream,
     removeStream,
+    getSignalingInfo,
     leave,
   }
 }

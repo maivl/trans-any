@@ -67,3 +67,23 @@ Stage Summary:
   - ✅ Audio call: Alice → Bob, `audioTracks=1` on Bob.
   - ✅ Responsive: desktop (sidebar + main) and mobile 390×844 (top header + content + bottom tab bar).
 - Screenshots in download/: light-join, light-chat, light-desktop-chat, light-desktop-files, light-mobile-chat, light-call, final-join.
+
+---
+Task ID: 3
+Agent: main (Z.ai Code)
+Task: Fix two user-reported issues — (1) input box and button not horizontally aligned, (2) two users entering the same room code "aaaaa" not pairing.
+
+Work Log:
+- Issue 2 diagnosis: reproduced room "aaaaa" with two browser sessions (mDNS-off flag needed only for this headless sandbox) — pairing SUCCEEDED (both peers Connected, saw each other). So the code is correct; the user's failure is environmental. Root causes addressed:
+  - Signaling: the previous relay set included `wss://relay.damus.io` which aggressively rate-limits Trystero's presence announces ("rate-limited: you are noting too much"). Replaced the relay set with 9 known-good, non-rate-limiting relays (nos.lol, relay.nostrdice.com, nostr.data.haus, relay.mostr.pub, nostr-01.yakihonne.com, relay.snort.social, nostr.wine, nostr.mom, relay.nostr.net) — all verified OPEN from the sandbox. Broader coverage = higher chance both peers share a working relay even if some are blocked on the user's network. Added a 4th STUN server (Cloudflare) for better srflx coverage.
+  - Diagnostics: added a live "Signaling N/M relays" indicator in the sidebar (polls Trystero's `getRelaySockets()` every 2s) so users can see whether signaling relays connected. Added an amber "No peer found yet…" hint that appears after 18s with no peer, explaining room-code/network requirements.
+  - (Free public TURN is unavailable — OpenRelay credentials are deprecated and allocate no relay candidates, verified. STUN + host candidates cover same-network and most NATs; symmetric-NAT cross-network still needs a TURN the user must supply.)
+- Issue 1 fix:
+  - JoinScreen: the "Generate" button used `text-xs` (→38px) while the room-code input used `text-sm` (→42px), a ~4px vertical misalignment. Changed the button to `text-sm` so both render at 42px. Measured topDiff=0 after fix.
+  - MessageInput: the textarea rested at ~42px (`py-2.5 leading-relaxed`) while the send button was `h-10` (40px) under `items-end` → ~2px top misalignment. Rewrote to textarea `min-h-10 py-2 leading-5` (40px resting) + button `h-10` + `items-end`/`self-end`. Measured topDiff=0, both 40px, after fix. Multi-line growth still works (JS auto-resize, button stays bottom-aligned).
+- Rebuilt (`vite build`), restarted `vite preview` on port 3000.
+
+Stage Summary:
+- `bun run lint` clean; dev.log clean; preview serving HTTP 200 on :3000.
+- Verified end-to-end (two sessions): room "aaaaa" → both Connected with "Signaling 9/9 relays"; text message Bob→Alice delivered; alignment measured (join: topDiff 0 / 42px; chat input: topDiff 0 / 40px). No damus rate-limit warnings anymore.
+- For the user: pairing should now work for same-network / two-tab scenarios. If it still fails, the new "Signaling N/M relays" indicator tells them whether their network is blocking the relays (if N is low/0), and the amber hint explains what to check. Cross-network behind symmetric NAT would need a user-supplied TURN server (no reliable free public TURN exists).

@@ -76,7 +76,7 @@ export default function JoinScreen(props: { onJoin: (p: Profile) => void }) {
             <button
               type="button"
               onClick={() => setRoom(randomRoomCode())}
-              class="shrink-0 rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs font-medium text-zinc-600 transition hover:bg-zinc-50 hover:text-zinc-900"
+              class="shrink-0 rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm font-medium text-zinc-600 transition hover:bg-zinc-50 hover:text-zinc-900"
               title="Generate a random room code"
             >
               Generate
