@@ -87,3 +87,27 @@ Stage Summary:
 - `bun run lint` clean; dev.log clean; preview serving HTTP 200 on :3000.
 - Verified end-to-end (two sessions): room "aaaaa" → both Connected with "Signaling 9/9 relays"; text message Bob→Alice delivered; alignment measured (join: topDiff 0 / 42px; chat input: topDiff 0 / 40px). No damus rate-limit warnings anymore.
 - For the user: pairing should now work for same-network / two-tab scenarios. If it still fails, the new "Signaling N/M relays" indicator tells them whether their network is blocking the relays (if N is low/0), and the amber hint explains what to check. Cross-network behind symmetric NAT would need a user-supplied TURN server (no reliable free public TURN exists).
+
+---
+Task ID: 4
+Agent: main (Z.ai Code)
+Task: Add QR code room-sharing feature and push the code to https://github.com/maivl/trans-any.git.
+
+Work Log:
+- Installed `qrcode` (+ `@types/qrcode`) in solid-chat.
+- Created `lib/qr.ts`: `buildShareUrl(room)` → `${origin}${pathname}?room=<code>`; `renderQrToCanvas` / `renderQrDataUrl` (dark-on-light, errorCorrection M).
+- Created `components/QRShareModal.tsx`: modal showing the room name + code, a 240px QR canvas (encodes the share URL), plus Share link (native Web Share API, falls back to copy), Copy link, and Save QR (download PNG) actions; closes on Escape / backdrop click.
+- Added a QR icon button in the Sidebar room block (next to the room code) that opens the modal.
+- `JoinScreen` now reads the `?room=` query param on mount and pre-fills the room code, with a green "✓ Room code filled from link" hint — so scanning the QR opens the app with the room ready and the recipient only needs to enter a name. (This completes the QR→join loop.)
+- Updated `.gitignore` to exclude `solid-chat/dist` and `public/chat` build artifacts; removed them from the git index (`git rm --cached`).
+- Added a project `README.md` (features, stack, getting started, pairing notes, structure, limitations).
+- Git: set identity (maivl), added remote `origin` with the provided PAT, staged all changes, committed (`feat: add QR code room sharing and push to trans-any`), pushed to `origin/main` (new branch, 126 files). Then reset the remote URL to the token-less form for safety.
+
+Stage Summary:
+- Build: solid-chat/dist (~1.64 MB JS / 489 KB gzip incl. qrcode). `bun run lint` clean. `vite preview` on :3000 serving HTTP 200.
+- Agent Browser end-to-end verification:
+  - ✅ Click QR button → modal opens, canvas renders the QR, share URL `http://localhost:3000/?room=vgt88i` shown, action buttons present.
+  - ✅ Open the share URL in a second session (simulates scanning the QR) → room code `vgt88i` pre-filled + green hint shown.
+  - ✅ Recipient enters name → Join → both peers Connected (pairing succeeded).
+- Repo: https://github.com/maivl/trans-any.git — branch `main`, head commit `02f5c12`, 126 files (full solid-chat source + config + README + root project files; node_modules & build output gitignored).
+- Note: the provided GitHub token was used only for the push and then removed from the local remote URL.
