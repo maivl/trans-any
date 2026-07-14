@@ -1,4 +1,4 @@
-import { createSignal, Show } from 'solid-js'
+import { createSignal, Show, onMount } from 'solid-js'
 import type { Profile } from '../types'
 import { colorFromId, randomId, randomRoomCode, randomRoomName } from '../lib/utils'
 
@@ -6,6 +6,22 @@ export default function JoinScreen(props: { onJoin: (p: Profile) => void }) {
   const [name, setName] = createSignal('')
   const [room, setRoom] = createSignal('')
   const [error, setError] = createSignal('')
+  const [prefilledRoom, setPrefilledRoom] = createSignal(false)
+
+  // Pre-fill the room code from the `?room=` query param (e.g. when arriving
+  // via a scanned QR code), so the recipient only needs to enter a name.
+  onMount(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const r = params.get('room')
+      if (r) {
+        setRoom(r.toLowerCase())
+        setPrefilledRoom(true)
+      }
+    } catch {
+      /* ignore */
+    }
+  })
 
   const handleJoin = () => {
     const n = name().trim()
@@ -82,6 +98,12 @@ export default function JoinScreen(props: { onJoin: (p: Profile) => void }) {
               Generate
             </button>
           </div>
+
+          <Show when={prefilledRoom()}>
+            <p class="mt-2 text-xs text-emerald-600">
+              ✓ Room code filled from link — just enter your name to join.
+            </p>
+          </Show>
 
           <Show when={error()}>
             <p class="mt-3 text-sm text-rose-600">{error()}</p>

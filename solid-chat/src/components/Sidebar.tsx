@@ -4,9 +4,11 @@ import {
   peers, connStatus, ipfsStatus, signaling, waitingLong, tab, setTab, transfers, received,
 } from '../store'
 import { formatBytes, formatTime, fileEmoji } from '../lib/utils'
+import QRShareModal from './QRShareModal'
 
 export default function Sidebar(props: { profile: Profile; onLeave: () => void }) {
   const [copied, setCopied] = createSignal(false)
+  const [showQr, setShowQr] = createSignal(false)
   const peerList = () => Object.values(peers())
   const activeTransfers = () => transfers().filter((t) => !t.done)
   const doneTransfers = () => transfers().filter((t) => t.done)
@@ -47,16 +49,33 @@ export default function Sidebar(props: { profile: Profile; onLeave: () => void }
 
       {/* Room block */}
       <div class="px-5 pb-4">
-        <div class="text-sm font-semibold text-zinc-900">{props.profile.roomName}</div>
-        <button
-          type="button"
-          onClick={copyRoom}
-          class="group mt-0.5 flex items-center gap-1.5 font-mono text-xs text-zinc-400 transition hover:text-zinc-700"
-          title="Copy room code"
-        >
-          <span>room / {props.profile.room}</span>
-          <span class="text-zinc-300 group-hover:text-zinc-700">{copied() ? '✓' : '⧉'}</span>
-        </button>
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0">
+            <div class="truncate text-sm font-semibold text-zinc-900">{props.profile.roomName}</div>
+            <button
+              type="button"
+              onClick={copyRoom}
+              class="group mt-0.5 flex items-center gap-1.5 font-mono text-xs text-zinc-400 transition hover:text-zinc-700"
+              title="Copy room code"
+            >
+              <span>room / {props.profile.room}</span>
+              <span class="text-zinc-300 group-hover:text-zinc-700">{copied() ? '✓' : '⧉'}</span>
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowQr(true)}
+            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 transition hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900"
+            title="Share via QR code"
+          >
+            <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4">
+              <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
+              <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
+              <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
+              <path d="M14 14h3v3M21 14v.01M14 21h.01M17 21h4v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
         {/* Status */}
         <div class={`mt-2 flex items-center gap-1.5 text-xs font-medium ${statusInfo().text}`}>
           <span class={`h-1.5 w-1.5 rounded-full ${statusInfo().dot}`} />
@@ -180,6 +199,14 @@ export default function Sidebar(props: { profile: Profile; onLeave: () => void }
           Chat
         </TabButton>
       </div>
+
+      <Show when={showQr()}>
+        <QRShareModal
+          room={props.profile.room}
+          roomName={props.profile.roomName}
+          onClose={() => setShowQr(false)}
+        />
+      </Show>
     </aside>
   )
 }
