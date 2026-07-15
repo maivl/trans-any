@@ -1,7 +1,7 @@
 import { Show, createSignal, createEffect, onCleanup } from 'solid-js'
 import { customElement, noShadowDOM } from 'solid-element'
 import type { Profile } from '../types'
-import { buildShareUrl, renderQrToCanvas, renderQrDataUrl } from '../lib/qr'
+import { buildShareUrl, renderQrDataUrl } from '../lib/qr'
 import { subscribeDebug, clearDebugLog, type DebugEntry } from '../lib/debug'
 import {
   signaling, waitingLong, connStatus, ipfsStatus, messages, remoteStreams, transfers, received,
@@ -32,19 +32,13 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
   const [showDebug, setShowDebug] = createSignal(false)
   const [debugEntries, setDebugEntries] = createSignal<DebugEntry[]>([])
   const [copiedLink, setCopiedLink] = createSignal(false)
-  let qrCanvas: HTMLCanvasElement | undefined
 
   const room = useRoom(profile, isCreator)
 
   // Subscribe debug buffer for the debug panel.
   onCleanup(subscribeDebug((entries) => setDebugEntries(entries.slice(-200))))
 
-  // Render QR to the inline canvas (creator only).
   const shareUrl = () => buildShareUrl(props.room)
-  createEffect(() => {
-    const c = qrCanvas
-    if (c) renderQrToCanvas(c, shareUrl(), 112).catch((e) => console.error('QR render failed', e))
-  })
 
   const copyLink = async () => {
     try {
@@ -93,7 +87,7 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
         <Sidebar
           room={props.room} roomName={props.roomName} name={props.name} color={props.color}
           isCreator={isCreator()}
-          qrCanvas={(el: HTMLCanvasElement | undefined) => (qrCanvas = el)}
+          shareUrl={shareUrl()}
           copiedLink={copiedLink()} onCopyLink={copyLink} onDownloadQr={downloadQr}
           statusInfo={statusInfo()} signaling={signaling()} waitingLong={waitingLong()} connStatus={connStatus()}
           peerList={Object.values(peers())} peerStates={peerStates()} ipfsLabel={ipfsLabel()} ipfsStatus={ipfsStatus()}

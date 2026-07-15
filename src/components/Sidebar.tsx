@@ -1,5 +1,6 @@
-import { For, Show, createSignal } from 'solid-js'
-import { formatBytes, formatTime, fileEmoji } from '../lib/utils'
+import { For, Show, createSignal, createEffect } from 'solid-js'
+import { formatBytes, formatTime } from '../lib/utils'
+import { renderQrToCanvas } from '../lib/qr'
 import type { PendingRequest, ReceivedFile, Transfer, PeerInfo, ConnStatus, IpfsStatus } from '../types'
 
 interface StatusInfo {
@@ -9,14 +10,14 @@ interface StatusInfo {
 }
 
 /** Left sidebar: brand, room info, status, join requests, QR (creator only),
- *  devices, transfers, received, IPFS, debug toggle, leave, tabs. */
+ *  devices, transfers, received, IPFS, leave. */
 export default function Sidebar(props: {
   room: string
   roomName: string
   name: string
   color: string
   isCreator: boolean
-  qrCanvas: (el: HTMLCanvasElement | undefined) => void
+  shareUrl: string
   copiedLink: boolean
   onCopyLink: () => void
   onDownloadQr: () => void
@@ -36,6 +37,13 @@ export default function Sidebar(props: {
   onDeny: (peerId: string) => void
 }) {
   const [qrExpanded, setQrExpanded] = createSignal(false)
+  let qrCanvas: HTMLCanvasElement | undefined
+  // Render the QR when the section expands (canvas becomes available).
+  createEffect(() => {
+    if (qrExpanded() && qrCanvas) {
+      renderQrToCanvas(qrCanvas, props.shareUrl, 112).catch((e) => console.error('QR render failed', e))
+    }
+  })
   return (
     <>
       {/* Brand */}
@@ -99,16 +107,18 @@ export default function Sidebar(props: {
                   <button
                     type="button"
                     onClick={() => props.onApprove(req.peerId)}
-                    class="rounded-md bg-emerald-500 px-2 py-1 text-[10px] font-medium text-white hover:bg-emerald-600"
+                    class="flex items-center gap-1 rounded-md bg-emerald-500 px-2 py-1 text-[10px] font-medium text-white hover:bg-emerald-600"
                   >
-                    ✓ Allow
+                    <svg viewBox="0 0 24 24" fill="none" class="h-3 w-3"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                    Allow
                   </button>
                   <button
                     type="button"
                     onClick={() => props.onDeny(req.peerId)}
-                    class="rounded-md border border-zinc-200 px-2 py-1 text-[10px] font-medium text-zinc-500 hover:bg-zinc-50"
+                    class="flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[10px] font-medium text-zinc-500 hover:bg-zinc-50"
                   >
-                    ✕ Deny
+                    <svg viewBox="0 0 24 24" fill="none" class="h-3 w-3"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" /></svg>
+                    Deny
                   </button>
                 </div>
               )}
@@ -120,11 +130,11 @@ export default function Sidebar(props: {
       {/* Share room — collapsed QR icon, expands downward on click (creator only) */}
       <Show when={props.isCreator}>
         <div class="border-y border-zinc-100 bg-zinc-50/60">
-          {/* Collapsed header (always visible) */}
+          {/* Collapsed header (always visible, no hover effect) */}
           <button
             type="button"
             onClick={() => setQrExpanded((v) => !v)}
-            class="flex w-full items-center justify-between px-5 py-2.5 text-left transition hover:bg-zinc-100"
+            class="flex w-full items-center justify-between px-5 py-2.5 text-left"
             title="Share room via QR code"
           >
             <span class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
@@ -150,7 +160,7 @@ export default function Sidebar(props: {
             <div class="px-5 pb-3">
               <div class="flex justify-center">
                 <div class="rounded-lg border border-zinc-200 bg-white p-1.5 shadow-sm">
-                  <canvas ref={props.qrCanvas} class="block h-28 w-28" aria-label="QR code for room share link" />
+                  <canvas ref={qrCanvas} class="block h-28 w-28" aria-label="QR code for room share link" />
                 </div>
               </div>
               <p class="mt-1.5 text-center text-[10px] leading-relaxed text-zinc-400">Scan to open with this room code</p>
@@ -160,14 +170,20 @@ export default function Sidebar(props: {
                   onClick={props.onCopyLink}
                   class="flex flex-1 items-center justify-center gap-1 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-50"
                 >
-                  {props.copiedLink ? '✓ Copied' : '⧉ Copy link'}
+                  <Show when={props.copiedLink} fallback={
+                    <svg viewBox="0 0 24 24" fill="none" class="h-3 w-3"><path d="M8 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2M8 5a2 2 0 0 0 0 4h6M8 5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2V5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  }>
+                    <svg viewBox="0 0 24 24" fill="none" class="h-3 w-3"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  </Show>
+                  {props.copiedLink ? 'Copied' : 'Copy link'}
                 </button>
                 <button
                   type="button"
                   onClick={props.onDownloadQr}
                   class="flex flex-1 items-center justify-center gap-1 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-50"
                 >
-                  ⬇ Save QR
+                  <svg viewBox="0 0 24 24" fill="none" class="h-3 w-3"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  Save QR
                 </button>
               </div>
             </div>
