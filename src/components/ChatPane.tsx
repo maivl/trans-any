@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal } from 'solid-js'
+import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import type { ChatMessage, CallState } from '../types'
 import { formatTime } from '../lib/utils'
 import type { DebugEntry } from '../lib/debug'
@@ -6,6 +6,7 @@ import VideoTile from './VideoTile'
 import FileBubble from './FileBubble'
 import CtrlBtn from './CtrlBtn'
 import DebugConsole from './DebugConsole'
+import SlashMenu, { type SlashCommand } from './SlashMenu'
 
 /** Chat tab: video tiles, call controls, message list, pill-shaped input. */
 export default function ChatPane(props: {
@@ -32,6 +33,9 @@ export default function ChatPane(props: {
   onClearDebug: () => void
 }) {
   const [text, setText] = createSignal('')
+  const [slashOpen, setSlashOpen] = createSignal(false)
+  const [slashQuery, setSlashQuery] = createSignal('')
+  const [slashIndex, setSlashIndex] = createSignal(0)
   let textarea: HTMLTextAreaElement | undefined
   let scrollEl: HTMLDivElement | undefined
   let chatFileInput: HTMLInputElement | undefined
@@ -46,17 +50,94 @@ export default function ChatPane(props: {
     })
   })
 
+  /** Slash commands — extensible. /debug opens the debug console; others are
+   *  wired to the call/file actions. Add more by extending this array. */
+  const slashCommands = createMemo<SlashCommand[]>(() => [
+    { cmd: 'debug', label: 'Debug console', desc: 'Open the pairing debug panel', icon: '🐛', run: () => props.setShowDebug(true) },
+    { cmd: 'audio', label: 'Voice call', desc: 'Start an audio call with peers', icon: '🎙️', run: () => props.onStartAudio() },
+    { cmd: 'video', label: 'Video call', desc: 'Start a video call with peers', icon: '📹', run: () => props.onStartVideo() },
+    { cmd: 'file', label: 'Send file', desc: 'Attach and send a file via IPFS', icon: '📎', run: () => chatFileInput?.click() },
+    { cmd: 'clear', label: 'Clear debug', desc: 'Clear the debug console log', icon: '🧹', run: () => props.onClearDebug() },
+  ])
+
+  const filteredCommands = createMemo(() => {
+    const q = slashQuery().toLowerCase()
+    return slashCommands().filter((c) => c.cmd.toLowerCase().includes(q) || c.label.toLowerCase().includes(q))
+  })
+
   const send = () => {
     const t = text().trim()
     if (!t) return
     props.onSendText(t)
     setText('')
+    setSlashOpen(false)
     if (textarea) textarea.style.height = 'auto'
   }
   const onInput = () => {
     if (textarea) {
       textarea.style.height = 'auto'
       textarea.style.height = Math.min(textarea.scrollHeight, 140) + 'px'
+    }
+  }
+
+  /** Detect "/" at start of input or after a space → open slash menu. */
+  const handleInput = (e: InputEvent) => {
+    const val = (e.currentTarget as HTMLTextAreaElement).value
+    setText(val)
+    onInput()
+    // Open slash menu if "/" typed at start or right after a space.
+    const lastSlash = val.lastIndexOf('/')
+    if (lastSlash === 0 || (lastSlash > 0 && val[lastSlash - 1] === ' ')) {
+      const query = val.slice(lastSlash + 1)
+      // Only open if query has no spaces (still typing the command).
+      if (!query.includes(' ')) {
+        setSlashQuery(query)
+        setSlashOpen(true)
+        setSlashIndex(0)
+        return
+      }
+    }
+    setSlashOpen(false)
+  }
+
+  const pickSlash = (c: SlashCommand) => {
+    c.run()
+    // Remove the "/query" from the input.
+    const val = text()
+    const lastSlash = val.lastIndexOf('/')
+    setText(lastSlash >= 0 ? val.slice(0, lastSlash) : '')
+    setSlashOpen(false)
+    if (textarea) textarea.style.height = 'auto'
+    textarea?.focus()
+  }
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (slashOpen() && filteredCommands().length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSlashIndex((i) => (i + 1) % filteredCommands().length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSlashIndex((i) => (i - 1 + filteredCommands().length) % filteredCommands().length)
+        return
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const cmd = filteredCommands()[slashIndex()]
+        if (cmd) pickSlash(cmd)
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setSlashOpen(false)
+        return
+      }
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      send()
     }
   }
 
@@ -172,54 +253,71 @@ export default function ChatPane(props: {
         </div>
       </div>
 
-      {/* Input — pill-shaped bar */}
-      <div class="shrink-0 border-t border-zinc-200 bg-white px-4 py-3 sm:px-6">
-        <div class="mx-auto flex max-w-2xl items-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1.5 transition focus-within:border-zinc-400 focus-within:bg-white">
-          <input
-            ref={chatFileInput}
-            type="file"
-            class="hidden"
-            multiple
-            onChange={(e) => {
-              const fs = (e.currentTarget as HTMLInputElement).files
-              if (fs) for (const f of Array.from(fs)) props.onSendFile(f)
-              if (chatFileInput) chatFileInput.value = ''
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => chatFileInput?.click()}
-            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-900"
-            title="Attach file"
-          >
-            <svg viewBox="0 0 24 24" fill="none" class="h-5 w-5"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
-          </button>
-          <textarea
-            ref={textarea}
-            value={text()}
-            rows={1}
-            placeholder="Message…"
-            onInput={(e) => {
-              setText(e.currentTarget.value)
-              onInput()
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                send()
-              }
-            }}
-            class="min-h-8 max-h-[120px] w-full flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 outline-none placeholder:text-zinc-400"
-          />
-          <button
-            type="button"
-            onClick={send}
-            disabled={!text().trim()}
-            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white transition hover:bg-zinc-800 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
-            title="Send"
-          >
-            <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4"><path d="M12 19V5m0 0-6 6m6-6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-          </button>
+      {/* Input — Doubao-style rounded container with quick-action chips + slash menu */}
+      <div class="shrink-0 bg-gradient-to-t from-zinc-100 to-zinc-50 px-4 pb-4 pt-2 sm:px-6">
+        <div class="relative mx-auto max-w-2xl">
+          {/* Slash command menu */}
+          <Show when={slashOpen()}>
+            <SlashMenu
+              query={slashQuery()}
+              commands={filteredCommands()}
+              activeIndex={slashIndex()}
+              onPick={pickSlash}
+              onHover={setSlashIndex}
+            />
+          </Show>
+
+          <div class="rounded-3xl border border-zinc-200 bg-white shadow-sm transition focus-within:border-zinc-400 focus-within:shadow-md">
+            {/* Quick-action chips row (Doubao-style) */}
+            <div class="flex items-center gap-1.5 overflow-x-auto px-3 pt-2.5 pb-1">
+              <input
+                ref={chatFileInput}
+                type="file"
+                class="hidden"
+                multiple
+                onChange={(e) => {
+                  const fs = (e.currentTarget as HTMLInputElement).files
+                  if (fs) for (const f of Array.from(fs)) props.onSendFile(f)
+                  if (chatFileInput) chatFileInput.value = ''
+                }}
+              />
+              <QuickChip icon="📎" label="File" onClick={() => chatFileInput?.click()} title="Send a file (IPFS)" />
+              <QuickChip icon="🎙️" label="Audio" onClick={props.onStartAudio} title="Start audio call" />
+              <QuickChip icon="📹" label="Video" onClick={props.onStartVideo} title="Start video call" />
+              <QuickChip icon="🐛" label="Debug" onClick={() => props.setShowDebug(!props.showDebug)} title="Toggle debug console" />
+              <Show when={inCall()}>
+                <QuickChip icon="✕" label="End call" onClick={props.onEndCall} title="End current call" danger />
+              </Show>
+              <span class="ml-auto shrink-0 pl-2 text-[10px] text-zinc-300">
+                Type <kbd class="rounded border border-zinc-200 bg-zinc-50 px-1 font-mono">/</kbd> for commands
+              </span>
+            </div>
+
+            {/* Textarea + send row */}
+            <div class="flex items-end gap-2 px-3 pb-2.5 pt-1">
+              <textarea
+                ref={textarea}
+                value={text()}
+                rows={1}
+                placeholder="发消息…  (type / for commands)"
+                onInput={handleInput}
+                onKeyDown={onKeyDown}
+                onBlur={() => setTimeout(() => setSlashOpen(false), 150)}
+                class="min-h-9 max-h-[120px] w-full flex-1 resize-none bg-transparent py-2 text-sm leading-5 outline-none placeholder:text-zinc-400"
+              />
+              <button
+                type="button"
+                onClick={send}
+                disabled={!text().trim()}
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white transition hover:bg-zinc-800 active:scale-95 disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-400"
+                title="Send (Enter)"
+              >
+                <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4">
+                  <path d="M12 19V5m0 0-6 6m6-6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -227,5 +325,24 @@ export default function ChatPane(props: {
         <DebugConsole entries={props.debugEntries} onClose={() => props.setShowDebug(false)} onClear={props.onClearDebug} />
       </Show>
     </div>
+  )
+}
+
+/** Doubao-style quick-action chip (icon + label). */
+function QuickChip(props: { icon: string; label: string; onClick: () => void; title?: string; danger?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      title={props.title}
+      class="flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition"
+      classList={{
+        'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100': props.danger,
+        'border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900': !props.danger,
+      }}
+    >
+      <span class="text-xs">{props.icon}</span>
+      <span>{props.label}</span>
+    </button>
   )
 }
