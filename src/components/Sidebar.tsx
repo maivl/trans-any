@@ -1,4 +1,4 @@
-import { For, Show } from 'solid-js'
+import { For, Show, createSignal } from 'solid-js'
 import { formatBytes, formatTime, fileEmoji } from '../lib/utils'
 import type { PendingRequest, ReceivedFile, Transfer, PeerInfo, ConnStatus, IpfsStatus } from '../types'
 
@@ -35,6 +35,7 @@ export default function Sidebar(props: {
   onApprove: (peerId: string) => void
   onDeny: (peerId: string) => void
 }) {
+  const [qrExpanded, setQrExpanded] = createSignal(false)
   return (
     <>
       {/* Brand */}
@@ -116,32 +117,61 @@ export default function Sidebar(props: {
         </div>
       </Show>
 
-      {/* Inline QR — creator only */}
+      {/* Share room — collapsed QR icon, expands downward on click (creator only) */}
       <Show when={props.isCreator}>
-        <div class="border-y border-zinc-100 bg-zinc-50/60 px-5 py-3">
-          <div class="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Share room</div>
-          <div class="flex justify-center">
-            <div class="rounded-lg border border-zinc-200 bg-white p-1.5 shadow-sm">
-              <canvas ref={props.qrCanvas} class="block h-28 w-28" aria-label="QR code for room share link" />
+        <div class="border-y border-zinc-100 bg-zinc-50/60">
+          {/* Collapsed header (always visible) */}
+          <button
+            type="button"
+            onClick={() => setQrExpanded((v) => !v)}
+            class="flex w-full items-center justify-between px-5 py-2.5 text-left transition hover:bg-zinc-100"
+            title="Share room via QR code"
+          >
+            <span class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4 text-zinc-500">
+                <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
+                <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
+                <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
+                <path d="M14 14h3v3M21 14v.01M14 21h.01M17 21h4v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              </svg>
+              Share room
+            </span>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              class="h-4 w-4 text-zinc-400 transition-transform"
+              classList={{ 'rotate-180': qrExpanded() }}
+            >
+              <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+          {/* Expanded content (canvas + actions) */}
+          <Show when={qrExpanded()}>
+            <div class="px-5 pb-3">
+              <div class="flex justify-center">
+                <div class="rounded-lg border border-zinc-200 bg-white p-1.5 shadow-sm">
+                  <canvas ref={props.qrCanvas} class="block h-28 w-28" aria-label="QR code for room share link" />
+                </div>
+              </div>
+              <p class="mt-1.5 text-center text-[10px] leading-relaxed text-zinc-400">Scan to open with this room code</p>
+              <div class="mt-2 flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={props.onCopyLink}
+                  class="flex flex-1 items-center justify-center gap-1 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-50"
+                >
+                  {props.copiedLink ? '✓ Copied' : '⧉ Copy link'}
+                </button>
+                <button
+                  type="button"
+                  onClick={props.onDownloadQr}
+                  class="flex flex-1 items-center justify-center gap-1 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-50"
+                >
+                  ⬇ Save QR
+                </button>
+              </div>
             </div>
-          </div>
-          <p class="mt-1.5 text-center text-[10px] leading-relaxed text-zinc-400">Scan to open with this room code</p>
-          <div class="mt-2 flex gap-1.5">
-            <button
-              type="button"
-              onClick={props.onCopyLink}
-              class="flex flex-1 items-center justify-center gap-1 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-50"
-            >
-              {props.copiedLink ? '✓ Copied' : '⧉ Copy link'}
-            </button>
-            <button
-              type="button"
-              onClick={props.onDownloadQr}
-              class="flex flex-1 items-center justify-center gap-1 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-50"
-            >
-              ⬇ Save QR
-            </button>
-          </div>
+          </Show>
         </div>
       </Show>
 

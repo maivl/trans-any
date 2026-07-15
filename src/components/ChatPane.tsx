@@ -269,37 +269,24 @@ export default function ChatPane(props: {
           </Show>
 
           <div class="rounded-3xl border border-zinc-200 bg-white shadow-sm transition focus-within:border-zinc-400 focus-within:shadow-md">
-            {/* Quick-action chips row (Doubao-style) */}
-            <div class="flex items-center gap-1.5 overflow-x-auto px-3 pt-2.5 pb-1">
-              <input
-                ref={chatFileInput}
-                type="file"
-                class="hidden"
-                multiple
-                onChange={(e) => {
-                  const fs = (e.currentTarget as HTMLInputElement).files
-                  if (fs) for (const f of Array.from(fs)) props.onSendFile(f)
-                  if (chatFileInput) chatFileInput.value = ''
-                }}
-              />
-              <QuickChip icon="📎" label="File" onClick={() => chatFileInput?.click()} title="Send a file (IPFS)" />
-              <QuickChip icon="🎙️" label="Audio" onClick={props.onStartAudio} title="Start audio call" />
-              <QuickChip icon="📹" label="Video" onClick={props.onStartVideo} title="Start video call" />
-              <Show when={inCall()}>
-                <QuickChip icon="✕" label="End call" onClick={props.onEndCall} title="End current call" danger />
-              </Show>
-              <span class="ml-auto shrink-0 pl-2 text-[10px] text-zinc-300">
-                Type <kbd class="rounded border border-zinc-200 bg-zinc-50 px-1 font-mono">/</kbd> for commands
-              </span>
-            </div>
-
-            {/* Textarea + send row */}
-            <div class="flex items-end gap-2 px-3 pb-2.5 pt-1">
+            <input
+              ref={chatFileInput}
+              type="file"
+              class="hidden"
+              multiple
+              onChange={(e) => {
+                const fs = (e.currentTarget as HTMLInputElement).files
+                if (fs) for (const f of Array.from(fs)) props.onSendFile(f)
+                if (chatFileInput) chatFileInput.value = ''
+              }}
+            />
+            {/* Textarea + send row (top) */}
+            <div class="flex items-end gap-2 px-3 pt-2.5 pb-1">
               <textarea
                 ref={textarea}
                 value={text()}
                 rows={1}
-                placeholder="发消息…  (type / for commands)"
+                placeholder="Please type in..."
                 onInput={handleInput}
                 onKeyDown={onKeyDown}
                 onBlur={() => setTimeout(() => setSlashOpen(false), 150)}
@@ -316,6 +303,19 @@ export default function ChatPane(props: {
                   <path d="M12 19V5m0 0-6 6m6-6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
               </button>
+            </div>
+
+            {/* Quick-action chips row (bottom) */}
+            <div class="flex items-center gap-1.5 overflow-x-auto px-3 pb-2.5 pt-1">
+              <QuickChip icon="📎" label="File" onClick={() => chatFileInput?.click()} title="Send a file (IPFS)" />
+              <QuickChip icon="🎙️" label="Audio" onClick={props.onStartAudio} title="Start audio call" />
+              <QuickChip icon="📹" label="Video" onClick={props.onStartVideo} title="Start video call" />
+              <Show when={inCall()}>
+                <QuickChip icon="✕" label="End call" onClick={props.onEndCall} title="End current call" danger />
+              </Show>
+              <span class="ml-auto shrink-0 pl-2 text-[10px] text-zinc-300">
+                Type <kbd class="rounded border border-zinc-200 bg-zinc-50 px-1 font-mono">/</kbd> for commands
+              </span>
             </div>
           </div>
         </div>
