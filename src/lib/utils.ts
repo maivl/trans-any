@@ -97,12 +97,12 @@ export function gatewayUrl(cid: string): string {
   return `https://dweb.link/ipfs/${cid}`
 }
 
-export function fileEmoji(mime: string): string {
-  if (mime.startsWith('image/')) return '🖼️'
-  if (mime.startsWith('video/')) return '🎬'
-  if (mime.startsWith('audio/')) return '🎵'
-  if (mime.includes('pdf')) return '📕'
-  if (mime.includes('zip') || mime.includes('compressed')) return '🗜️'
-  if (mime.startsWith('text/')) return '📄'
-  return '📄'
+/** Map a MIME type to an icon key (used by the Icon component). */
+export function fileIconKey(mime: string): string {
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('video/')) return 'film'
+  if (mime.startsWith('audio/')) return 'music'
+  if (mime.includes('pdf')) return 'pdf'
+  if (mime.includes('zip') || mime.includes('compressed')) return 'archive'
+  return 'doc'
 }

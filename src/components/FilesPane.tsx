@@ -1,6 +1,7 @@
 import { For, Show, createSignal } from 'solid-js'
-import { formatBytes, formatTime, shortCid, gatewayUrl, fileEmoji } from '../lib/utils'
+import { formatBytes, formatTime, shortCid, gatewayUrl, fileIconKey } from '../lib/utils'
 import type { ReceivedFile } from '../types'
+import { Icon, type IconKey } from './icons'
 
 /** Files tab: drag-and-drop upload zone + received-files list. */
 export default function FilesPane(props: {
@@ -84,7 +85,7 @@ export default function FilesPane(props: {
             <For each={props.received}>
               {(f) => (
                 <div class="flex items-center gap-3 rounded-xl border border-zinc-200 bg-white p-3">
-                  <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-lg">{fileEmoji(f.mime)}</div>
+                  <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500"><Icon name={fileIconKey(f.mime) as IconKey} class="h-5 w-5" /></div>
                   <div class="min-w-0 flex-1">
                     <div class="truncate text-sm font-medium text-zinc-900">{f.name}</div>
                     <div class="flex items-center gap-1.5 text-[11px] text-zinc-400">

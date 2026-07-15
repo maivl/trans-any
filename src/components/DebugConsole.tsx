@@ -1,5 +1,6 @@
 import { For, Show, createEffect } from 'solid-js'
 import type { DebugEntry } from '../lib/debug'
+import { Icon } from './icons'
 
 /** Overlay console showing timestamped pairing/debug events. */
 export default function DebugConsole(props: {
@@ -21,7 +22,7 @@ export default function DebugConsole(props: {
     >
       <div class="flex h-[60vh] w-full max-w-md flex-col rounded-xl border border-zinc-200 bg-white shadow-xl">
         <div class="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
-          <span class="text-xs font-semibold text-zinc-700">🐛 Pairing debug console</span>
+          <span class="flex items-center gap-1.5 text-xs font-semibold text-zinc-700"><Icon name="debug" class="h-4 w-4" /> Pairing debug console</span>
           <div class="flex gap-1.5">
             <button
               type="button"

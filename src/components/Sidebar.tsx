@@ -226,7 +226,7 @@ export default function Sidebar(props: {
           <For each={props.transfers.slice(0, 6)}>
             {(t) => (
               <div class="flex items-center gap-2 rounded-md px-1.5 py-1">
-                <span class="text-sm">{t.dir === 'send' ? '↑' : '↓'}</span>
+                <span class="text-zinc-400">{t.dir === 'send' ? <svg viewBox="0 0 24 24" fill="none" class="h-3.5 w-3.5"><path d="M12 19V5m0 0-6 6m6-6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg> : <svg viewBox="0 0 24 24" fill="none" class="h-3.5 w-3.5"><path d="M12 5v14m0 0 6-6m-6 6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>}</span>
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center justify-between gap-2">
                     <span class="truncate text-xs font-medium text-zinc-700">{t.name}</span>
@@ -317,7 +317,7 @@ function DeviceRow(props: { name: string; sub: string; color: string; self?: boo
         <div class="truncate text-[10px] text-zinc-400">{props.sub}</div>
       </div>
       <Show when={props.media && props.media !== 'none'}>
-        <span class="text-xs">{props.media === 'video' ? '📹' : '🎙️'}</span>
+        <span class="text-zinc-400">{props.media === 'video' ? <svg viewBox="0 0 24 24" fill="none" class="h-3.5 w-3.5"><rect x="2" y="6" width="14" height="12" rx="2" stroke="currentColor" stroke-width="2" /><path d="m22 8-6 4 6 4V8Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg> : <svg viewBox="0 0 24 24" fill="none" class="h-3.5 w-3.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>}</span>
       </Show>
     </div>
   )

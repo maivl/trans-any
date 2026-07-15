@@ -7,6 +7,7 @@ import FileBubble from './FileBubble'
 import CtrlBtn from './CtrlBtn'
 import DebugConsole from './DebugConsole'
 import SlashMenu, { type SlashCommand } from './SlashMenu'
+import { Icon } from './icons'
 
 /** Chat tab: video tiles, call controls, message list, pill-shaped input. */
 export default function ChatPane(props: {
@@ -55,11 +56,11 @@ export default function ChatPane(props: {
   /** Slash commands — extensible. /debug opens the debug console; others are
    *  wired to the call/file actions. Add more by extending this array. */
   const slashCommands = createMemo<SlashCommand[]>(() => [
-    { cmd: 'debug', label: 'Debug console', desc: 'Open the pairing debug panel', icon: '🐛', run: () => props.setShowDebug(true) },
-    { cmd: 'audio', label: 'Voice call', desc: 'Start an audio call with peers', icon: '🎙️', run: () => props.onStartAudio() },
-    { cmd: 'video', label: 'Video call', desc: 'Start a video call with peers', icon: '📹', run: () => props.onStartVideo() },
-    { cmd: 'file', label: 'Send file', desc: 'Attach and send a file via IPFS', icon: '📎', run: () => chatFileInput?.click() },
-    { cmd: 'clear', label: 'Clear debug', desc: 'Clear the debug console log', icon: '🧹', run: () => props.onClearDebug() },
+    { cmd: 'debug', label: 'Debug console', desc: 'Open the pairing debug panel', icon: 'debug', run: () => props.setShowDebug(true) },
+    { cmd: 'audio', label: 'Voice call', desc: 'Start an audio call with peers', icon: 'audio', run: () => props.onStartAudio() },
+    { cmd: 'video', label: 'Video call', desc: 'Start a video call with peers', icon: 'video', run: () => props.onStartVideo() },
+    { cmd: 'file', label: 'Send file', desc: 'Attach and send a file via IPFS', icon: 'file', run: () => chatFileInput?.click() },
+    { cmd: 'clear', label: 'Clear debug', desc: 'Clear the debug console log', icon: 'clear', run: () => props.onClearDebug() },
   ])
 
   const filteredCommands = createMemo(() => {
@@ -186,14 +187,14 @@ export default function ChatPane(props: {
           fallback={
             <>
               <span class="mr-1 text-xs text-zinc-400">{hasRemote() ? 'Peer is live · join with' : 'Start a call'}</span>
-              <CtrlBtn kind="ghost" onClick={props.onStartAudio}>🎙️ Audio</CtrlBtn>
-              <CtrlBtn kind="ghost" onClick={props.onStartVideo}>📹 Video</CtrlBtn>
+              <CtrlBtn kind="ghost" onClick={props.onStartAudio}><Icon name="audio" class="h-4 w-4" /> Audio</CtrlBtn>
+              <CtrlBtn kind="ghost" onClick={props.onStartVideo}><Icon name="video" class="h-4 w-4" /> Video</CtrlBtn>
             </>
           }
         >
-          <CtrlBtn kind="toggle" active={props.micEnabled} onClick={props.onToggleMic}>{props.micEnabled ? '🎙️' : '🔇'}</CtrlBtn>
+          <CtrlBtn kind="toggle" active={props.micEnabled} onClick={props.onToggleMic}><Icon name={props.micEnabled ? 'mic-on' : 'mic-off'} class="h-4 w-4" /></CtrlBtn>
           <Show when={props.callState === 'video'}>
-            <CtrlBtn kind="toggle" active={props.camEnabled} onClick={props.onToggleCam}>{props.camEnabled ? '📹' : '🚫'}</CtrlBtn>
+            <CtrlBtn kind="toggle" active={props.camEnabled} onClick={props.onToggleCam}><Icon name={props.camEnabled ? 'cam-on' : 'cam-off'} class="h-4 w-4" /></CtrlBtn>
           </Show>
           <CtrlBtn kind="danger" onClick={props.onEndCall}>
             <svg viewBox="0 0 24 24" fill="none" class="h-3.5 w-3.5">
@@ -307,11 +308,11 @@ export default function ChatPane(props: {
 
             {/* Quick-action chips row (bottom) */}
             <div class="flex items-center gap-1.5 overflow-x-auto px-3 pb-2.5 pt-1">
-              <QuickChip icon="📎" label="File" onClick={() => chatFileInput?.click()} title="Send a file (IPFS)" />
-              <QuickChip icon="🎙️" label="Audio" onClick={props.onStartAudio} title="Start audio call" />
-              <QuickChip icon="📹" label="Video" onClick={props.onStartVideo} title="Start video call" />
+              <QuickChip icon="file" label="File" onClick={() => chatFileInput?.click()} title="Send a file (IPFS)" />
+              <QuickChip icon="audio" label="Audio" onClick={props.onStartAudio} title="Start audio call" />
+              <QuickChip icon="video" label="Video" onClick={props.onStartVideo} title="Start video call" />
               <Show when={inCall()}>
-                <QuickChip icon="✕" label="End call" onClick={props.onEndCall} title="End current call" danger />
+                <QuickChip icon="end" label="End call" onClick={props.onEndCall} title="End current call" danger />
               </Show>
               <span class="ml-auto shrink-0 pl-2 text-[10px] text-zinc-300">
                 Type <kbd class="rounded border border-zinc-200 bg-zinc-50 px-1 font-mono">/</kbd> for commands
@@ -329,7 +330,7 @@ export default function ChatPane(props: {
 }
 
 /** Doubao-style quick-action chip (icon + label). */
-function QuickChip(props: { icon: string; label: string; onClick: () => void; title?: string; danger?: boolean }) {
+function QuickChip(props: { icon: import('./icons').IconKey; label: string; onClick: () => void; title?: string; danger?: boolean }) {
   return (
     <button
       type="button"
@@ -341,7 +342,7 @@ function QuickChip(props: { icon: string; label: string; onClick: () => void; ti
         'border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900': !props.danger,
       }}
     >
-      <span class="text-xs">{props.icon}</span>
+      <Icon name={props.icon} class="h-3.5 w-3.5" />
       <span>{props.label}</span>
     </button>
   )

@@ -1,5 +1,6 @@
-import { formatBytes, shortCid, gatewayUrl, fileEmoji } from '../lib/utils'
+import { formatBytes, shortCid, gatewayUrl, fileIconKey } from '../lib/utils'
 import type { FileMeta } from '../types'
+import { Icon, type IconKey } from './icons'
 
 /** A file message bubble shown in the chat (with Download + gateway link). */
 export default function FileBubble(props: {
@@ -17,7 +18,7 @@ export default function FileBubble(props: {
       }}
     >
       <div class="flex items-center gap-2.5">
-        <span class="text-xl">{fileEmoji(props.file.mime)}</span>
+        <span class="flex h-6 w-6 shrink-0 items-center justify-center text-zinc-500"><Icon name={fileIconKey(props.file.mime) as IconKey} class="h-5 w-5" /></span>
         <div class="min-w-0 flex-1">
           <div class="min-w-0 break-words text-sm font-medium [overflow-wrap:anywhere]">{props.file.name}</div>
           <div class="flex items-center gap-1.5 text-[11px] text-zinc-400">

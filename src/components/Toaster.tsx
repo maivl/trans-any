@@ -1,5 +1,6 @@
 import { For, Show } from 'solid-js'
 import { toasts } from '../store'
+import { Icon } from './icons'
 
 /** Fixed-position toast notifications (bottom-right). */
 export default function Toaster() {
@@ -15,8 +16,8 @@ export default function Toaster() {
               'border-zinc-200 text-zinc-700': t.kind === 'info',
             }}
           >
-            <Show when={t.kind === 'success'}>✓</Show>
-            <Show when={t.kind === 'error'}>⚠</Show>
+            <Show when={t.kind === 'success'}><Icon name="check" class="h-4 w-4" /></Show>
+            <Show when={t.kind === 'error'}><Icon name="warn" class="h-4 w-4" /></Show>
             <span>{t.text}</span>
           </div>
         )}

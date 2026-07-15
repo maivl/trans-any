@@ -1,10 +1,11 @@
 import { For, Show, createMemo } from 'solid-js'
+import { Icon, type IconKey } from './icons'
 
 export interface SlashCommand {
   cmd: string
   label: string
   desc: string
-  icon: string
+  icon: IconKey
   run: () => void
 }
 
@@ -41,7 +42,7 @@ export default function SlashMenu(props: {
                 class="flex w-full items-center gap-2.5 px-3 py-2 text-left transition"
                 classList={{ 'bg-zinc-100': i() === props.activeIndex, 'hover:bg-zinc-50': i() !== props.activeIndex }}
               >
-                <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-sm">{c.icon}</span>
+                <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500"><Icon name={c.icon} class="h-4 w-4" /></span>
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-1.5">
                     <span class="font-mono text-xs font-medium text-zinc-900">/{c.cmd}</span>
