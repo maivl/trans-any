@@ -283,3 +283,18 @@ Work Log:
 Stage Summary:
 - FybeamRoom 1376 → 183 lines; total src 2605 → 2433 lines but now across 17 focused files.
 - Verified: creator renders (QR + Share room), joiner → join request → Allow → both Connected → encrypted text delivered. Build clean, lint clean, preview HTTP 200. Pushed `3194ec6` to https://github.com/maivl/trans-any.git main.
+
+---
+Task ID: 15
+Agent: main (Z.ai Code)
+Task: Redesign chat input bar to match doubao.com/chat; integrate file/audio/video into the input; add / slash commands (e.g. /debug), extensible.
+
+Work Log:
+- Studied doubao.com/chat input: rounded container (radius 24px, white bg), horizontal quick-action chips row on top, textarea + icon buttons below. Applied the same pattern.
+- ChatPane input rewritten: rounded-3xl white container with shadow + focus ring, gradient footer (zinc-100→zinc-50). Inside: a quick-action chips row (📎 File, 🎙️ Audio, 📹 Video, 🐛 Debug) + an "End call" chip when in a call; then a textarea + circular send button row. This integrates file/audio/video directly into the input (replaces the old separate call-controls bar).
+- New SlashMenu component: typing "/" at the start of input (or after a space) opens a filterable command popover above the input. Commands: /debug (open debug console), /audio (voice call), /video (video call), /file (attach), /clear (clear debug log). Arrow keys navigate, Enter picks, Esc closes. The SlashCommand array is extensible — add entries to expand.
+- QuickChip helper component for the chips.
+
+Stage Summary:
+- Verified: creator + joiner pair + approve → connected; quick chips render (File/Audio/Video/Debug); typing "/" opens the slash menu with all commands; pressing Enter on /debug opens the Pairing debug console; typing "/fi" filters to /file.
+- Build clean, lint clean, preview HTTP 200. Pushed `68921a7` to https://github.com/maivl/trans-any.git main.
