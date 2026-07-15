@@ -28,6 +28,7 @@ export default function ChatPane(props: {
   onSendText: (t: string) => void
   onSendFile: (f: File) => void
   onDownload: (cid: string, name: string, size: number, from: string) => void
+  onPin: (cid: string, name: string) => void
   showDebug: boolean
   setShowDebug: (v: boolean) => void
   debugEntries: DebugEntry[]
@@ -242,7 +243,7 @@ export default function ChatPane(props: {
                         </div>
                       }
                     >
-                      <FileBubble file={m.file!} self={isSelf(m)} onDownload={props.onDownload} from={m.name} />
+                      <FileBubble file={m.file!} self={isSelf(m)} onDownload={props.onDownload} onPin={props.onPin} from={m.name} />
                     </Show>
                   </div>
                 </div>

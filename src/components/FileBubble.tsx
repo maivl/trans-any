@@ -8,6 +8,7 @@ export default function FileBubble(props: {
   self: boolean
   from: string
   onDownload: (cid: string, name: string, size: number, from: string) => void
+  onPin: (cid: string, name: string) => void
 }) {
   return (
     <div
@@ -39,6 +40,17 @@ export default function FileBubble(props: {
           >
             gateway ↗
           </a>
+          <button
+            type="button"
+            onClick={() => props.onPin(props.file.cid, props.file.name)}
+            class="flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-[11px] font-medium text-zinc-500 transition hover:bg-zinc-100 active:scale-95"
+            title="Pin to IPFS network"
+          >
+            <svg viewBox="0 0 24 24" fill="none" class="h-3 w-3">
+              <path d="M12 17v5M9 10.76V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4.76a2 2 0 0 0 .5 1.32L18 15H6l2.5-2.92a2 2 0 0 0 .5-1.32Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            Pin
+          </button>
           <button
             type="button"
             onClick={() => props.onDownload(props.file.cid, props.file.name, props.file.size, props.from)}

@@ -85,9 +85,6 @@ export async function addFile(
  * returns 200 (or rejects if all fail).
  */
 async function publishToGateway(cidStr: string, bytes: Uint8Array): Promise<void> {
-  // Some gateways accept a PUT to /ipfs/<cid> with the raw bytes; others will
-  // fetch via bitswap once asked. We trigger a GET (which makes the gateway
-  // pull the block from our Helia node) as the simplest portable method.
   for (const gw of IPFS_GATEWAYS) {
     try {
       const url = gw + cidStr
@@ -185,4 +182,44 @@ export async function stopIpfs() {
     fs = null
     initPromise = null
   }
+}
+
+/**
+ * Pin a file to the IPFS network by uploading its bytes to public pinning
+ * gateways. This makes the file persistently available even after the sender's
+ * browser Helia node goes offline. Returns true if at least one gateway
+ * accepted the upload.
+ */
+export async function pinToNetwork(
+  cidStr: string,
+  bytes: Uint8Array,
+  onProgress?: (ratio: number) => void,
+): Promise<boolean> {
+  const PIN_GATEWAYS = [
+    'https://dweb.link/ipfs/',
+    'https://ipfs.io/ipfs/',
+    'https://cloudflare-ipfs.com/ipfs/',
+    'https://gateway.pinata.cloud/ipfs/',
+  ]
+  onProgress?.(0)
+  for (const gw of PIN_GATEWAYS) {
+    try {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), 30000)
+      const resp = await fetch(gw + cidStr, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: ctrl.signal,
+      })
+      clearTimeout(timer)
+      if (resp.ok) {
+        onProgress?.(1)
+        return true
+      }
+    } catch {
+      // try next gateway
+    }
+  }
+  onProgress?.(1)
+  return false
 }

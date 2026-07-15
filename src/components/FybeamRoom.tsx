@@ -152,7 +152,7 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
             callState={callState()} micEnabled={micEnabled()} camEnabled={camEnabled()}
             onStartAudio={() => room.startCall('audio')} onStartVideo={() => room.startCall('video')}
             onEndCall={() => room.endCall(false)} onToggleMic={room.toggleMic} onToggleCam={room.toggleCam}
-            onSendText={room.handleSendText} onSendFile={room.handleSendFile} onDownload={room.handleDownload}
+            onSendText={room.handleSendText} onSendFile={room.handleSendFile} onDownload={room.handleDownload} onPin={room.handlePin}
             setShowDebug={setShowDebug} showDebug={showDebug()}
             debugEntries={debugEntries()} onClearDebug={() => clearDebugLog()}
             ipfsReady={ipfsStatus() === 'ready'}

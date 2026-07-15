@@ -1,7 +1,7 @@
 import { onCleanup, onMount, createSignal } from 'solid-js'
 import type { Profile, ChatMessage } from '../types'
 import { createChat, type ChatController } from './chat'
-import { initIpfs, getNodeId, addBytes, fetchFile } from './ipfs'
+import { initIpfs, getNodeId, addBytes, fetchFile, pinToNetwork } from './ipfs'
 import { generateRoomKey, exportKey, importKey, encryptBytes, decryptBytes, type CryptoKeyLike } from './crypto'
 import { log } from './debug'
 import { randomId } from './utils'
@@ -415,6 +415,29 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
     }
   }
 
+  async function handlePin(cid: string, name: string) {
+    pushToast(`Pinning ${name} to IPFS network…`, 'info')
+    try {
+      let bytes: Uint8Array
+      const cached = fileCache.get(cid)
+      if (cached) {
+        bytes = new TextEncoder().encode(cached)
+      } else {
+        const data = await fetchFile(cid, 0)
+        bytes = data
+      }
+      const ok = await pinToNetwork(cid, bytes)
+      if (ok) {
+        pushToast(`${name} pinned to IPFS network`, 'success')
+      } else {
+        pushToast(`Could not pin ${name} to any gateway`, 'error')
+      }
+    } catch (e) {
+      console.error(e)
+      pushToast(`Failed to pin ${name}`, 'error')
+    }
+  }
+
   async function approveJoiner(peerId: string) {
     const req = pendingRequests().find((r) => r.peerId === peerId)
     if (!req) return
@@ -452,6 +475,7 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
     handleSendText,
     handleSendFile,
     handleDownload,
+    handlePin,
     startCall,
     endCall,
     toggleMic,
