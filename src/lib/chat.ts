@@ -85,41 +85,13 @@ const STUN_SERVERS = [
   { urls: 'stun:stun.cloudflare.com:3478' },
 ]
 
-// NOTE: TURN support has been removed. Cross-network WebRTC pairing now relies
-// on STUN + host candidates; files travel via IPFS gateways (encrypted) and
-// text via the WebRTC data channel. If you need cross-network NAT traversal
-// for the data channel itself, re-add a TURN server to STUN_SERVERS below.
-const TURN_STORAGE_KEY = 'fybeam-turn-servers'
+// TURN support removed — files travel via IPFS gateways (encrypted), text via
+// the WebRTC data channel. For cross-network NAT traversal, add a TURN server
+// to STUN_SERVERS and pass it through rtcConfig.
 
-/**
- * Read user-configured TURN servers from localStorage. (Currently unused —
- * TURN UI is disabled. Kept for potential re-enablement.)
- */
-export function getConfiguredTurnServers(): RTCIceServer[] {
-  try {
-    const raw = localStorage.getItem(TURN_STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter(
-      (s) => s && typeof s === 'object' && typeof s.urls === 'string',
-    ) as RTCIceServer[]
-  } catch {
-    return []
-  }
-}
-
-export function setConfiguredTurnServers(servers: RTCIceServer[]): void {
-  try {
-    localStorage.setItem(TURN_STORAGE_KEY, JSON.stringify(servers))
-  } catch {
-    /* ignore */
-  }
-}
-
-/** Build the RTCConfiguration with STUN servers (TURN disabled). */
+/** Build the RTCConfiguration with STUN servers. */
 function buildRtcConfig(): RTCConfiguration {
-  log.info('ice', 'ICE servers (STUN only; TURN disabled)', { stun: STUN_SERVERS.length })
+  log.info('ice', 'ICE servers (STUN)', { stun: STUN_SERVERS.length })
   return {
     iceServers: [...STUN_SERVERS],
     iceTransportPolicy: 'all',
