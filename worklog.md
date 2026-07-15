@@ -266,3 +266,20 @@ Stage Summary:
 - Verified: creator/joiner pair + approve → both Connected; E2E key exchanged (toast 'E2E encryption enabled'); encrypted text delivered + decrypted ('secret message test 123' received); file encrypted before IPFS upload (logged 'file encrypted before IPFS upload {original:21, encrypted:68}'); file message received by joiner.
 - Known limitation: cross-network file download via public IPFS gateway can be slow/unreliable (the gateway must fetch the CID from the creator's browser Helia node via bitswap, which isn't always reachable); same-network works. For production, a pinning service (web3.storage/Pinata) or sending file bytes over the WebRTC data channel would make downloads dependable.
 - Build clean, lint clean, preview HTTP 200. Pushed `8f08f5a` to https://github.com/maivl/trans-any.git main.
+
+---
+Task ID: 14
+Agent: main (Z.ai Code)
+Task: Split FybeamRoom component (应拆尽拆), delete dead code/comments, optimize logic.
+
+Work Log:
+- FybeamRoom.tsx was 1376 lines (orchestration + all UI in one file). Split into single-responsibility components + a useRoom hook:
+  - src/lib/useRoom.ts (382 lines): all room orchestration — Trystero chat, E2E key exchange, IPFS, approval flow, calls, file send/download. Returns { controller, leave, handleSendText, handleSendFile, handleDownload, startCall, endCall, toggleMic, toggleCam, approveJoiner, denyJoiner }.
+  - src/components/FybeamRoom.tsx (183 lines): thin layout — desktop sidebar + main (chat/files), mobile header + bottom tabs, toasts, approval overlay. Calls useRoom + renders sub-components.
+  - New components: Sidebar (327), ChatPane (231), FilesPane (119), VideoTile (50), FileBubble (52), CtrlBtn (21), Toaster (26), DebugConsole (59), ApprovalOverlay (39) — each its own file.
+- Dead code removed: TurnConfigModal + onOpenTurn prop plumbing (TURN already disabled); chat.ts getConfiguredTurnServers/setConfiguredTurnServers/TURN_STORAGE_KEY; root scaffolding (examples/, mini-services/, db/, prisma/, public/, skills/, .zscripts/, Caddyfile, tool-results/, .env — all unused Next.js leftovers).
+- Logic optimization: useRoom centralizes all handlers (was inline in FybeamRoom's createChat call); systemMsg helper dedups system-message creation; Sidebar uses small DeviceRow/SectionLabel/EmptyRow/TabButton sub-components; fixed dynamic-import warnings (static imports in useRoom).
+
+Stage Summary:
+- FybeamRoom 1376 → 183 lines; total src 2605 → 2433 lines but now across 17 focused files.
+- Verified: creator renders (QR + Share room), joiner → join request → Allow → both Connected → encrypted text delivered. Build clean, lint clean, preview HTTP 200. Pushed `3194ec6` to https://github.com/maivl/trans-any.git main.
