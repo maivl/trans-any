@@ -1,7 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, onMount } from 'solid-js'
 import type { ChatMessage, CallState } from '../types'
 import { formatTime } from '../lib/utils'
-import { loadSettings } from '../lib/chat'
+import { loadSettings, saveSettings, DEFAULT_GATEWAY_URLS, DEFAULT_RELAY_URLS } from '../lib/chat'
 import type { DebugEntry } from '../lib/debug'
 import VideoTile from './VideoTile'
 import FileBubble from './FileBubble'
@@ -42,7 +42,6 @@ export default function ChatPane(props: {
   const [slashOpen, setSlashOpen] = createSignal(false)
   const [slashQuery, setSlashQuery] = createSignal('')
   const [slashIndex, setSlashIndex] = createSignal(0)
-  const [showSettings, setShowSettings] = createSignal(false)
   let textarea: HTMLTextAreaElement | undefined
   let scrollEl: HTMLDivElement | undefined
   let chatFileInput: HTMLInputElement | undefined
@@ -64,7 +63,7 @@ export default function ChatPane(props: {
     { cmd: 'audio', label: 'Voice call', desc: 'Start an audio call with peers', icon: 'audio', run: () => props.onStartAudio() },
     { cmd: 'video', label: 'Video call', desc: 'Start a video call with peers', icon: 'video', run: () => props.onStartVideo() },
     { cmd: 'file', label: 'Send file', desc: 'Attach and send a file via IPFS', icon: 'file', run: () => chatFileInput?.click() },
-    { cmd: 'setting', label: 'Settings', desc: 'Configure IPFS gateways & relay nodes', icon: 'file', run: () => setShowSettings(true) },
+    { cmd: 'setting', label: 'Settings', desc: 'Configure IPFS gateways & relay nodes', icon: 'file', run: () => props.onSendSettings(loadSettings().gateways, loadSettings().relays) },
     { cmd: 'clear', label: 'Clear debug', desc: 'Clear the debug console log', icon: 'clear', run: () => props.onClearDebug() },
   ])
 
@@ -237,7 +236,7 @@ export default function ChatPane(props: {
                       </div>
                     </Show>
                     <Show when={m.kind === 'settings'}>
-                      <SettingsBubble self={isSelf(m)} text={m.text || ''} from={m.name} />
+                      <SettingsBubble self={isSelf(m)} text={m.text || ''} from={m.name} onSave={props.onSendSettings} />
                     </Show>
                     <Show when={m.kind === 'file' && m.file}>
                       <FileBubble file={m.file!} self={isSelf(m)} onDownload={props.onDownload} onPin={props.onPin} from={m.name} />
@@ -331,75 +330,165 @@ export default function ChatPane(props: {
       <Show when={props.showDebug}>
         <DebugConsole entries={props.debugEntries} onClose={() => props.setShowDebug(false)} onClear={props.onClearDebug} />
       </Show>
-
-      <Show when={showSettings()}>
-        <SettingsDialog onClose={() => setShowSettings(false)} onSave={(g, r) => { props.onSendSettings(g, r); setShowSettings(false) }} />
-      </Show>
     </div>
   )
 }
 
-function SettingsBubble(props: { self: boolean; text: string; from: string }) {
-  let data: { gateways?: string[]; relays?: string[] } = {}
-  try { data = JSON.parse(props.text) } catch { /* ignore */ }
+interface SettingsItem {
+  url: string
+  enabled: boolean
+  type: 'gateway' | 'relay'
+}
+
+function SettingsBubble(props: {
+  self: boolean
+  text: string
+  from: string
+  onSave: (gateways: string[], relays: string[]) => void
+}) {
+  const [editing, setEditing] = createSignal(false)
+  const [items, setItems] = createSignal<SettingsItem[]>([])
+  const [newUrl, setNewUrl] = createSignal('')
+  const [newType, setNewType] = createSignal<'gateway' | 'relay'>('gateway')
+
+  onMount(() => {
+    try {
+      const data = JSON.parse(props.text)
+      const list: SettingsItem[] = [
+        ...(data.gateways || []).map((u: string) => ({ url: u, enabled: true, type: 'gateway' as const })),
+        ...(data.relays || []).map((u: string) => ({ url: u, enabled: true, type: 'relay' as const })),
+      ]
+      setItems(list)
+    } catch { /* ignore */ }
+  })
+
+  const toggle = (idx: number) => {
+    setItems((prev) => prev.map((it, i) => i === idx ? { ...it, enabled: !it.enabled } : it))
+  }
+
+  const remove = (idx: number) => {
+    setItems((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  const add = () => {
+    const u = newUrl().trim()
+    if (!u) return
+    setItems((prev) => [...prev, { url: u, enabled: true, type: newType() }])
+    setNewUrl('')
+  }
+
+  const save = () => {
+    const gateways = items().filter((it) => it.enabled && it.type === 'gateway').map((it) => it.url)
+    const relays = items().filter((it) => it.enabled && it.type === 'relay').map((it) => it.url)
+    props.onSave(gateways, relays)
+    setEditing(false)
+  }
+
   return (
     <div
-      class="w-64 max-w-[80vw] rounded-2xl border p-3"
-      classList={{ 'rounded-br-md border-zinc-800 bg-zinc-900 text-white': props.self, 'rounded-bl-md border-zinc-200 bg-white text-zinc-800': !props.self }}
+      class="overflow-hidden rounded-2xl border transition-all duration-300"
+      classList={{
+        'rounded-br-md border-zinc-800 bg-zinc-900 text-white': props.self,
+        'rounded-bl-md border border-zinc-200 bg-white text-zinc-800': !props.self,
+        'w-64 max-w-[80vw] p-3': !editing(),
+        'w-80 max-w-[90vw] p-4': editing(),
+      }}
     >
       <div class="mb-2 flex items-center gap-2 text-sm font-medium">
-        <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4 text-zinc-400"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" stroke-width="2" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4 text-zinc-400">
+          <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" stroke-width="2" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
         Settings shared
       </div>
-      <div class="space-y-1.5 text-[11px] text-zinc-400">
-        <div>
-          <span class="font-medium text-zinc-500">IPFS Gateways:</span>
-          <div class="mt-0.5 space-y-0.5">
-            {(data.gateways || []).map((g) => <div class="truncate font-mono text-[10px]">{g}</div>)}
-          </div>
-        </div>
-        <div>
-          <span class="font-medium text-zinc-500">Relay Nodes:</span>
-          <div class="mt-0.5 space-y-0.5">
-            {(data.relays || []).map((r) => <div class="truncate font-mono text-[10px]">{r}</div>)}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
 
-function SettingsDialog(props: { onClose: () => void; onSave: (gateways: string[], relays: string[]) => void }) {
-  const [gateways, setGateways] = createSignal('')
-  const [relays, setRelays] = createSignal('')
-  onMount(() => {
-    const s = loadSettings()
-    setGateways(s.gateways.join('\n'))
-    setRelays(s.relays.join('\n'))
-  })
-  const save = () => {
-    const g = gateways().split('\n').map((s) => s.trim()).filter(Boolean)
-    const r = relays().split('\n').map((s) => s.trim()).filter(Boolean)
-    props.onSave(g, r)
-  }
-  return (
-    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && props.onClose()}>
-      <div class="flex max-h-[80vh] w-full max-w-md flex-col overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl">
-        <div class="mb-3 flex items-center justify-between">
-          <h2 class="text-base font-semibold text-zinc-900">Settings</h2>
-          <button type="button" onClick={props.onClose} class="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
-            <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+      <Show when={!editing()}>
+        <div class="space-y-2 text-[11px]">
+          <For each={items()}>
+            {(it, i) => (
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => toggle(i())}
+                  class={"flex h-4 w-4 shrink-0 items-center justify-center rounded border transition " + (it.enabled ? "border-emerald-500 bg-emerald-500 text-white" : "border-zinc-300 bg-transparent")}
+                >
+                  {it.enabled && <svg viewBox="0 0 24 24" fill="none" class="h-3 w-3"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>}
+                </button>
+                <span class={"shrink-0 rounded px-1 text-[9px] font-medium " + (it.type === 'gateway' ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700")}>
+                  {it.type === 'gateway' ? 'GW' : 'RLY'}
+                </span>
+                <span class="truncate font-mono text-[10px] text-zinc-400">{it.url}</span>
+              </div>
+            )}
+          </For>
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            class="mt-1 flex items-center gap-1 text-[11px] font-medium text-amber-500 transition hover:text-amber-600"
+          >
+            <svg viewBox="0 0 24 24" fill="none" class="h-3.5 w-3.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            Edit
           </button>
         </div>
-        <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400">IPFS Gateways (one per line)</label>
-        <textarea value={gateways()} onInput={(e) => setGateways(e.currentTarget.value)} rows={4} class="mb-4 w-full resize-none rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-xs outline-none focus:border-zinc-900 focus:bg-white" />
-        <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400">Nostr Relay Nodes (one per line)</label>
-        <textarea value={relays()} onInput={(e) => setRelays(e.currentTarget.value)} rows={6} class="mb-4 w-full resize-none rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-xs outline-none focus:border-zinc-900 focus:bg-white" />
-        <div class="flex justify-end gap-2">
-          <button type="button" onClick={props.onClose} class="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
-          <button type="button" onClick={save} class="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-800">Save &amp; Share</button>
+      </Show>
+
+      <Show when={editing()}>
+        <div class="space-y-1.5">
+          <For each={items()}>
+            {(it, i) => (
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => toggle(i())}
+                  class={"flex h-4 w-4 shrink-0 items-center justify-center rounded border transition " + (it.enabled ? "border-emerald-500 bg-emerald-500 text-white" : "border-zinc-300 bg-transparent")}
+                >
+                  {it.enabled && <svg viewBox="0 0 24 24" fill="none" class="h-3 w-3"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>}
+                </button>
+                <select
+                  value={it.type}
+                  onChange={(e) => setItems((prev) => prev.map((x, j) => j === i() ? { ...x, type: e.currentTarget.value as 'gateway' | 'relay' } : x))}
+                  class="shrink-0 rounded border border-zinc-300 bg-zinc-50 px-1 py-0.5 text-[10px] outline-none"
+                >
+                  <option value="gateway">GW</option>
+                  <option value="relay">RLY</option>
+                </select>
+                <input
+                  type="text"
+                  value={it.url}
+                  onInput={(e) => setItems((prev) => prev.map((x, j) => j === i() ? { ...x, url: e.currentTarget.value } : x))}
+                  class="min-w-0 flex-1 rounded border border-zinc-300 bg-zinc-50 px-2 py-0.5 font-mono text-[10px] outline-none focus:border-zinc-500"
+                />
+                <button type="button" onClick={() => remove(i())} class="shrink-0 text-rose-400 hover:text-rose-600">
+                  <svg viewBox="0 0 24 24" fill="none" class="h-3.5 w-3.5"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+                </button>
+              </div>
+            )}
+          </For>
+          <div class="flex items-center gap-2 pt-1">
+            <select
+              value={newType()}
+              onChange={(e) => setNewType(e.currentTarget.value as 'gateway' | 'relay')}
+              class="shrink-0 rounded border border-zinc-300 bg-zinc-50 px-1 py-0.5 text-[10px] outline-none"
+            >
+              <option value="gateway">GW</option>
+              <option value="relay">RLY</option>
+            </select>
+            <input
+              type="text"
+              value={newUrl()}
+              onInput={(e) => setNewUrl(e.currentTarget.value)}
+              onKeyDown={(e) => e.key === 'Enter' && add()}
+              placeholder="Add URL..."
+              class="min-w-0 flex-1 rounded border border-zinc-300 bg-zinc-50 px-2 py-0.5 font-mono text-[10px] outline-none focus:border-zinc-500"
+            />
+            <button type="button" onClick={add} class="shrink-0 rounded bg-zinc-200 px-2 py-0.5 text-[10px] font-medium text-zinc-700 hover:bg-zinc-300">+</button>
+          </div>
+          <div class="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setEditing(false)} class="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+            <button type="button" onClick={save} class="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800">Save</button>
+          </div>
         </div>
-      </div>
+      </Show>
     </div>
   )
 }

@@ -493,7 +493,6 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
 
   function handleSendSettings(gateways: string[], relays: string[]) {
     saveSettings(gateways, relays)
-    controller()?.sendSettings(gateways, relays)
     setMessages((m) => [...m, {
       id: randomId(),
       peerId: controller()?.selfId ?? 'me',
@@ -504,7 +503,7 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
       time: Date.now(),
       self: true,
     }])
-    pushToast('Settings saved & shared', 'success')
+    pushToast('Settings saved', 'success')
   }
 
   return {
