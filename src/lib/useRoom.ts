@@ -184,6 +184,22 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
             }
           }
         },
+        onFileRequest: (peerId, cid) => {
+          // A peer is requesting file bytes — send from cache via WebRTC.
+          const encB64 = fileCache.get(cid)
+          if (!encB64) {
+            log.warn('file', 'request for unknown CID (not in cache)', { cid: cid.slice(0, 8) })
+            return
+          }
+          log.info('file', 'responding to file request via WebRTC', { to: peerId, cid: cid.slice(0, 8) })
+          // Chunk size: ~12KB per chunk (base64). Trystero data channel limit.
+          const CHUNK_SIZE = 12000
+          const total = Math.ceil(encB64.length / CHUNK_SIZE)
+          for (let i = 0; i < total; i++) {
+            const data = encB64.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE)
+            ctrl.sendFileChunk(peerId, { cid, index: i, total, data })
+          }
+        },
       },
       () => roomKey(),
     )
@@ -337,14 +353,49 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
   async function handleDownload(cid: string, name: string, size: number, from: string) {
     const tid = randomId()
     addTransfer({ id: tid, name, size, dir: 'recv', peerName: from, progress: 0, done: false, time: Date.now() })
+
     try {
-      const data = await fetchFile(cid, size, (r) => updateTransfer(tid, { progress: r * 0.8 }))
-      let fileBytes: Uint8Array = data
+      let encB64: string | null = null
+
+      // 1) Try WebRTC first (instant if the sender is online — avoids the
+      //    30-60s delay of public IPFS gateways timing out on browser-only CIDs).
+      const peerIds = Object.keys(peers())
+      if (peerIds.length > 0) {
+        log.info('file', 'requesting via WebRTC', { cid: cid.slice(0, 8) })
+        encB64 = await new Promise<string | null>((resolve) => {
+          const timeout = setTimeout(() => {
+            pendingDownloads.delete(cid)
+            resolve(null) // WebRTC timed out — fall through to gateway.
+          }, 10000)
+          pendingDownloads.set(cid, (data) => {
+            clearTimeout(timeout)
+            pendingDownloads.delete(cid)
+            resolve(data)
+          })
+          // Request from the first connected peer.
+          controller()?.sendFileRequest(peerIds[0], cid)
+        })
+        if (encB64) {
+          log.ok('file', 'received via WebRTC', { cid: cid.slice(0, 8), bytes: encB64.length })
+          updateTransfer(tid, { progress: 0.9 })
+        }
+      }
+
+      // 2) Fallback: public IPFS gateways (with a 15s timeout per gateway).
+      if (!encB64) {
+        log.info('file', 'WebRTC failed/unavailable, trying IPFS gateways', { cid: cid.slice(0, 8) })
+        const data = await fetchFile(cid, size, (r) => updateTransfer(tid, { progress: r * 0.8 }))
+        encB64 = new TextDecoder().decode(data)
+      }
+
+      // 3) Decrypt + save.
+      let fileBytes: Uint8Array
       const key = roomKey()
-      if (key) {
-        const encB64 = new TextDecoder().decode(data)
+      if (key && encB64) {
         fileBytes = await decryptBytes(key, encB64)
-        log.info('crypto', 'file decrypted after IPFS download', { encrypted: data.byteLength, decrypted: fileBytes.byteLength })
+        log.info('crypto', 'file decrypted', { encrypted: encB64.length, decrypted: fileBytes.byteLength })
+      } else {
+        fileBytes = new TextEncoder().encode(encB64 ?? '')
       }
       const blob = new Blob([fileBytes as BlobPart])
       const url = URL.createObjectURL(blob)

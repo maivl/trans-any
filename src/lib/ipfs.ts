@@ -136,11 +136,14 @@ export async function fetchFile(
   size: number,
   onProgress?: (ratio: number) => void,
 ): Promise<Uint8Array> {
-  // 1) Try public gateways (streaming with progress).
+  // 1) Try public gateways (streaming with progress, 15s timeout each).
   for (const gw of IPFS_GATEWAYS) {
     try {
       const url = gw + cidStr
-      const resp = await fetch(url, { redirect: 'follow' })
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), 15000)
+      const resp = await fetch(url, { redirect: 'follow', signal: ctrl.signal })
+      clearTimeout(timer)
       if (!resp.ok || !resp.body) continue
       const reader = resp.body.getReader()
       const chunks: Uint8Array[] = []
@@ -164,7 +167,7 @@ export async function fetchFile(
       }
       return out
     } catch {
-      // try next gateway
+      // timeout or error — try next gateway
     }
   }
   // 2) Fallback: local Helia bitswap.

@@ -35,6 +35,8 @@ export interface ChatController {
   sendRoomKey: (peerId: string, keyB64: string) => void
   /** Send encrypted file bytes (chunked) over the WebRTC data channel. */
   sendFileChunk: (to: string, chunk: { cid: string; index: number; total: number; data: string }) => void
+  /** Request file bytes from a peer over WebRTC (CID → encrypted base64). */
+  sendFileRequest: (to: string, cid: string) => void
   /** Disconnect a specific peer (e.g. after denying approval). */
   removePeer: (peerId: string) => void
   leave: () => void
@@ -59,6 +61,8 @@ export interface ChatHandlers {
   onRoomKey?: (peerId: string, keyB64: string) => void
   /** A peer sent a chunk of encrypted file bytes (WebRTC fallback for download). */
   onFileChunk?: (peerId: string, chunk: { cid: string; index: number; total: number; data: string }) => void
+  /** A peer is requesting file bytes by CID (sender side — respond via sendFileChunk). */
+  onFileRequest?: (peerId: string, cid: string) => void
 }
 
 const APP_ID = 'zai-trystero-p2p-chat-v1'
@@ -146,6 +150,8 @@ export function createChat(
   // File-bytes exchange (WebRTC fallback for downloads when IPFS gateways
   // can't reach the sender's browser Helia node).
   const fileChunkAction = room.makeAction<{ cid: string; index: number; total: number; data: string }>('file-chunk')
+  // File-bytes request: receiver → sender (ask for file bytes over WebRTC).
+  const fileReqAction = room.makeAction<{ cid: string }>('file-request')
 
   // Watch relay sockets come online (signaling transport readiness).
   try {
@@ -325,6 +331,12 @@ export function createChat(
     handlers.onFileChunk?.(context.peerId, data)
   }
 
+  // Incoming file request — a peer wants us to send file bytes over WebRTC.
+  fileReqAction.onMessage = (data, context) => {
+    log.info('file', 'request received', { from: context.peerId, cid: data.cid.slice(0, 8) })
+    handlers.onFileRequest?.(context.peerId, data.cid)
+  }
+
   // Incoming media control events
   mediaAction.onMessage = (data, context) => {
     log.info('media', 'event', { from: context.peerId, event: data.event, kind: data.kind })
@@ -362,6 +374,10 @@ export function createChat(
   }
   const sendFileChunk = (to: string, chunk: { cid: string; index: number; total: number; data: string }) => {
     fileChunkAction.send(chunk, { target: to }).catch((e) => log.error('file', 'chunk send failed', e))
+  }
+  const sendFileRequest = (to: string, cid: string) => {
+    log.info('file', 'requesting file via WebRTC', { to, cid: cid.slice(0, 8) })
+    fileReqAction.send({ cid }, { target: to }).catch((e) => log.error('file', 'request send failed', e))
   }
   const removePeer = (peerId: string) => {
     try {
@@ -439,6 +455,7 @@ export function createChat(
     sendApproval,
     sendRoomKey,
     sendFileChunk,
+    sendFileRequest,
     removePeer,
     leave,
   }
