@@ -1,7 +1,8 @@
 import { For, Show, createSignal, createEffect } from 'solid-js'
-import { formatBytes, formatTime } from '../lib/utils'
+import { formatBytes, formatTime, fileIconKey } from '../lib/utils'
 import { renderQrToCanvas } from '../lib/qr'
 import type { PendingRequest, ReceivedFile, Transfer, PeerInfo, ConnStatus, IpfsStatus } from '../types'
+import { Icon, type IconKey } from './icons'
 
 interface StatusInfo {
   label: string
@@ -254,7 +255,7 @@ export default function Sidebar(props: {
           <For each={props.received.slice(0, 8)}>
             {(f) => (
               <div class="flex items-center gap-2 rounded-md px-1.5 py-1">
-                <span class="text-sm">{fileEmoji(f.mime)}</span>
+                <Icon name={fileIconKey(f.mime) as IconKey} class="h-4 w-4 shrink-0 text-zinc-400" />
                 <div class="min-w-0 flex-1">
                   <div class="truncate text-xs font-medium text-zinc-700">{f.name}</div>
                   <div class="text-[10px] text-zinc-400">{formatBytes(f.size)} · from {f.from} · {formatTime(f.time)}</div>
