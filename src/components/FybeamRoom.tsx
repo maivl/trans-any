@@ -32,6 +32,7 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
   const [showDebug, setShowDebug] = createSignal(false)
   const [debugEntries, setDebugEntries] = createSignal<DebugEntry[]>([])
   const [copiedLink, setCopiedLink] = createSignal(false)
+  const [showMobileSidebar, setShowMobileSidebar] = createSignal(false)
 
   const room = useRoom(profile, isCreator)
 
@@ -80,33 +81,54 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
     }
   }
 
+  // Shared sidebar props (used by both desktop sidebar and mobile dialog).
+  const sidebarProps = {
+    get room() { return props.room },
+    get roomName() { return props.roomName },
+    get name() { return props.name },
+    get color() { return props.color },
+    get isCreator() { return isCreator() },
+    get shareUrl() { return shareUrl() },
+    get copiedLink() { return copiedLink() },
+    onCopyLink: copyLink,
+    onDownloadQr: downloadQr,
+    get statusInfo() { return statusInfo() },
+    get signaling() { return signaling() },
+    get waitingLong() { return waitingLong() },
+    get connStatus() { return connStatus() },
+    get peerList() { return Object.values(peers()) },
+    get peerStates() { return peerStates() },
+    get ipfsLabel() { return ipfsLabel() },
+    get ipfsStatus() { return ipfsStatus() },
+    get transfers() { return transfers() },
+    get received() { return received().filter((f) => f.cid) },
+    onLeave: () => { setShowMobileSidebar(false); room.leave() },
+    get pendingRequests() { return pendingRequests() },
+    onApprove: room.approveJoiner,
+    onDeny: room.denyJoiner,
+  }
+
   return (
     <div class="flex h-full w-full bg-zinc-50 text-zinc-900">
-      {/* Desktop sidebar */}
+      {/* Desktop sidebar (md+) */}
       <aside class="hidden h-full w-64 shrink-0 flex-col border-r border-zinc-200 bg-white md:flex md:w-72">
-        <Sidebar
-          room={props.room} roomName={props.roomName} name={props.name} color={props.color}
-          isCreator={isCreator()}
-          shareUrl={shareUrl()}
-          copiedLink={copiedLink()} onCopyLink={copyLink} onDownloadQr={downloadQr}
-          statusInfo={statusInfo()} signaling={signaling()} waitingLong={waitingLong()} connStatus={connStatus()}
-          peerList={Object.values(peers())} peerStates={peerStates()} ipfsLabel={ipfsLabel()} ipfsStatus={ipfsStatus()}
-          transfers={transfers()} received={received().filter((f) => f.cid)}
-          onLeave={room.leave}
-          pendingRequests={pendingRequests()} onApprove={room.approveJoiner} onDeny={room.denyJoiner}
-        />
+        <Sidebar {...sidebarProps} />
       </aside>
 
       <main class="flex min-w-0 flex-1 flex-col">
-        {/* Mobile top header */}
+        {/* Mobile top header (with menu button to open sidebar as a dialog) */}
         <header class="flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-3 md:hidden">
-          <div class="flex items-center gap-2">
-            <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-900 text-white">
-              <svg viewBox="0 0 24 24" fill="none" class="h-3.5 w-3.5">
-                <path d="M12 2a10 10 0 1 0 10 10" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
-                <path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+          <div class="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setShowMobileSidebar(true)}
+              class="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-600 hover:bg-zinc-100"
+              title="Open menu"
+            >
+              <svg viewBox="0 0 24 24" fill="none" class="h-5 w-5">
+                <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
               </svg>
-            </div>
+            </button>
             <div class="leading-tight">
               <div class="text-sm font-semibold">{props.roomName}</div>
               <div class="font-mono text-[10px] text-zinc-400">room / {props.room}</div>
@@ -138,6 +160,35 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
           />
         </div>
       </main>
+
+      {/* Mobile sidebar dialog (slide-in from left) */}
+      <Show when={showMobileSidebar()}>
+        <div class="fixed inset-0 z-50 md:hidden">
+          {/* Backdrop */}
+          <div
+            class="absolute inset-0 bg-black/40"
+            onClick={() => setShowMobileSidebar(false)}
+          />
+          {/* Panel */}
+          <div class="absolute left-0 top-0 flex h-full w-72 max-w-[85vw] flex-col bg-white shadow-xl">
+            <div class="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+              <span class="text-sm font-semibold">Room info</span>
+              <button
+                type="button"
+                onClick={() => setShowMobileSidebar(false)}
+                class="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+              >
+                <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4">
+                  <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <Sidebar {...sidebarProps} />
+            </div>
+          </div>
+        </div>
+      </Show>
 
       <Toaster />
       <Show when={!isCreator()}>
