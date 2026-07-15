@@ -23,6 +23,14 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
   const [controller, setController] = createSignal<ChatController | null>(null)
   const [roomKey, setRoomKey] = createSignal<CryptoKeyLike | null>(null)
 
+  /** Cache of encrypted file bytes keyed by CID, so we can re-send over WebRTC
+   *  when a peer's gateway download fails. (CID → encrypted base64 string). */
+  const fileCache = new Map<string, string>()
+  /** Incoming file-chunk buffer: CID → { total, chunks: Map<index, data> }. */
+  const incomingChunks = new Map<string, { total: number; chunks: Map<number, string> }>()
+  /** Pending download requests (CID → callback) for the WebRTC fallback. */
+  const pendingDownloads = new Map<string, (data: string) => void>()
+
   const leave = () => {
     controller()?.leave()
     endCall(true)
@@ -155,6 +163,27 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
             })
             .catch((e) => log.error('crypto', 'failed to import room key', e))
         },
+        onFileChunk: (peerId, chunk) => {
+          // Receiving a chunk of encrypted file bytes over WebRTC.
+          let buf = incomingChunks.get(chunk.cid)
+          if (!buf) {
+            buf = { total: chunk.total, chunks: new Map() }
+            incomingChunks.set(chunk.cid, buf)
+          }
+          buf.chunks.set(chunk.index, chunk.data)
+          log.info('file', 'chunk received', { cid: chunk.cid.slice(0, 8), index: chunk.index, total: chunk.total, have: buf.chunks.size })
+          if (buf.chunks.size === buf.total) {
+            // All chunks arrived — assemble.
+            let assembled = ''
+            for (let i = 0; i < buf.total; i++) assembled += buf.chunks.get(i) ?? ''
+            incomingChunks.delete(chunk.cid)
+            const cb = pendingDownloads.get(chunk.cid)
+            if (cb) {
+              pendingDownloads.delete(chunk.cid)
+              cb(assembled)
+            }
+          }
+        },
       },
       () => roomKey(),
     )
@@ -225,13 +254,17 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
     try {
       const rawBytes = new Uint8Array(await file.arrayBuffer())
       let bytesToUpload: Uint8Array = rawBytes
+      let encB64: string | null = null
       const key = roomKey()
       if (key) {
-        const encB64 = await encryptBytes(key, rawBytes)
+        encB64 = await encryptBytes(key, rawBytes)
         bytesToUpload = new TextEncoder().encode(encB64)
         log.info('crypto', 'file encrypted before IPFS upload', { original: rawBytes.byteLength, encrypted: bytesToUpload.byteLength })
       }
       const cid = await addBytes(bytesToUpload, (r) => updateTransfer(tid, { progress: r * 0.7 }))
+      // Cache the encrypted bytes so we can re-send over WebRTC if a peer's
+      // gateway download fails.
+      if (encB64) fileCache.set(cid, encB64)
       emitSelfMessage({
         id: randomId(),
         peerId: controller()?.selfId ?? 'me',

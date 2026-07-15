@@ -33,6 +33,8 @@ export interface ChatController {
   sendApproval: (peerId: string, approved: boolean) => void
   /** Send the E2E room key to an approved joiner (creator side). */
   sendRoomKey: (peerId: string, keyB64: string) => void
+  /** Send encrypted file bytes (chunked) over the WebRTC data channel. */
+  sendFileChunk: (to: string, chunk: { cid: string; index: number; total: number; data: string }) => void
   /** Disconnect a specific peer (e.g. after denying approval). */
   removePeer: (peerId: string) => void
   leave: () => void
@@ -55,6 +57,8 @@ export interface ChatHandlers {
   onApproval?: (peerId: string, approved: boolean) => void
   /** The creator sent us the E2E room key (joiner side). */
   onRoomKey?: (peerId: string, keyB64: string) => void
+  /** A peer sent a chunk of encrypted file bytes (WebRTC fallback for download). */
+  onFileChunk?: (peerId: string, chunk: { cid: string; index: number; total: number; data: string }) => void
 }
 
 const APP_ID = 'zai-trystero-p2p-chat-v1'
@@ -139,6 +143,9 @@ export function createChat(
   const approvalAction = room.makeAction<{ approved: boolean }>('approval')
   // Room-key exchange: creator → approved joiner (E2E encryption key).
   const keyAction = room.makeAction<{ key: string }>('room-key')
+  // File-bytes exchange (WebRTC fallback for downloads when IPFS gateways
+  // can't reach the sender's browser Helia node).
+  const fileChunkAction = room.makeAction<{ cid: string; index: number; total: number; data: string }>('file-chunk')
 
   // Watch relay sockets come online (signaling transport readiness).
   try {
@@ -313,6 +320,11 @@ export function createChat(
     handlers.onRoomKey?.(context.peerId, data.key)
   }
 
+  // Incoming file chunk (WebRTC fallback for file downloads).
+  fileChunkAction.onMessage = (data, context) => {
+    handlers.onFileChunk?.(context.peerId, data)
+  }
+
   // Incoming media control events
   mediaAction.onMessage = (data, context) => {
     log.info('media', 'event', { from: context.peerId, event: data.event, kind: data.kind })
@@ -347,6 +359,9 @@ export function createChat(
   const sendRoomKey = (peerId: string, keyB64: string) => {
     log.info('crypto', 'sending room key', { to: peerId })
     keyAction.send({ key: keyB64 }, { target: peerId }).catch((e) => log.error('crypto', 'key send failed', e))
+  }
+  const sendFileChunk = (to: string, chunk: { cid: string; index: number; total: number; data: string }) => {
+    fileChunkAction.send(chunk, { target: to }).catch((e) => log.error('file', 'chunk send failed', e))
   }
   const removePeer = (peerId: string) => {
     try {
@@ -423,6 +438,7 @@ export function createChat(
     sendJoinRequest,
     sendApproval,
     sendRoomKey,
+    sendFileChunk,
     removePeer,
     leave,
   }

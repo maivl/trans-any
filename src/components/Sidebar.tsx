@@ -1,7 +1,6 @@
 import { For, Show } from 'solid-js'
 import { formatBytes, formatTime, fileEmoji } from '../lib/utils'
-import type { DebugEntry } from '../lib/debug'
-import type { PendingRequest, ReceivedFile, Transfer, PeerInfo, ConnStatus, IpfsStatus, Tab } from '../types'
+import type { PendingRequest, ReceivedFile, Transfer, PeerInfo, ConnStatus, IpfsStatus } from '../types'
 
 interface StatusInfo {
   label: string
@@ -31,13 +30,7 @@ export default function Sidebar(props: {
   ipfsStatus: IpfsStatus
   transfers: Transfer[]
   received: ReceivedFile[]
-  tab: Tab
-  setTab: (t: Tab) => void
   onLeave: () => void
-  showDebug: boolean
-  setShowDebug: (v: boolean) => void
-  debugEntries: DebugEntry[]
-  onClearDebug: () => void
   pendingRequests: PendingRequest[]
   onApprove: (peerId: string) => void
   onDeny: (peerId: string) => void
@@ -228,25 +221,16 @@ export default function Sidebar(props: {
 
       {/* IPFS + Debug + Leave */}
       <div class="border-t border-zinc-200 px-5 py-2">
-        <div class="mb-2 flex items-center justify-between gap-1.5 text-[11px] text-zinc-400">
-          <span class="flex items-center gap-1.5">
-            <span
-              class="h-1.5 w-1.5 rounded-full"
-              classList={{
-                'bg-emerald-500': props.ipfsStatus === 'ready',
-                'bg-amber-500 animate-pulse-soft': props.ipfsStatus === 'init',
-                'bg-rose-500': props.ipfsStatus === 'error',
-              }}
-            />
-            {props.ipfsLabel}
-          </span>
-          <button
-            type="button"
-            onClick={() => props.setShowDebug(!props.showDebug)}
-            class="rounded border border-zinc-200 px-2 py-0.5 text-[10px] font-medium text-zinc-500 hover:bg-zinc-50"
-          >
-            🐛 Debug
-          </button>
+        <div class="mb-2 flex items-center gap-1.5 text-[11px] text-zinc-400">
+          <span
+            class="h-1.5 w-1.5 rounded-full"
+            classList={{
+              'bg-emerald-500': props.ipfsStatus === 'ready',
+              'bg-amber-500 animate-pulse-soft': props.ipfsStatus === 'init',
+              'bg-rose-500': props.ipfsStatus === 'error',
+            }}
+          />
+          {props.ipfsLabel}
         </div>
         <button
           type="button"
@@ -255,16 +239,6 @@ export default function Sidebar(props: {
         >
           Leave room
         </button>
-      </div>
-
-      {/* Tabs */}
-      <div class="flex gap-1.5 border-t border-zinc-200 p-3">
-        <TabButton active={props.tab === 'files'} onClick={() => props.setTab('files')} icon="files">
-          Files
-        </TabButton>
-        <TabButton active={props.tab === 'chat'} onClick={() => props.setTab('chat')} icon="chat">
-          Chat
-        </TabButton>
       </div>
     </>
   )
@@ -300,28 +274,5 @@ function DeviceRow(props: { name: string; sub: string; color: string; self?: boo
         <span class="text-xs">{props.media === 'video' ? '📹' : '🎙️'}</span>
       </Show>
     </div>
-  )
-}
-
-function TabButton(props: { active: boolean; onClick: () => void; icon: string; children: any }) {
-  return (
-    <button
-      type="button"
-      onClick={props.onClick}
-      class="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition"
-      classList={{ 'bg-zinc-900 text-white': props.active, 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200': !props.active }}
-    >
-      <Show when={props.icon === 'files'}>
-        <svg viewBox="0 0 24 24" fill="none" class="h-3.5 w-3.5">
-          <path d="M12 16V4m0 0L8 8m4-4 4 4M4 20h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-      </Show>
-      <Show when={props.icon === 'chat'}>
-        <svg viewBox="0 0 24 24" fill="none" class="h-3.5 w-3.5">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-      </Show>
-      {props.children}
-    </button>
   )
 }

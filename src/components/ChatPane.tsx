@@ -31,6 +31,8 @@ export default function ChatPane(props: {
   setShowDebug: (v: boolean) => void
   debugEntries: DebugEntry[]
   onClearDebug: () => void
+  ipfsReady: boolean
+  received: { id: string; cid: string; name: string; size: number; mime: string; from: string; time: number }[]
 }) {
   const [text, setText] = createSignal('')
   const [slashOpen, setSlashOpen] = createSignal(false)
@@ -200,7 +202,6 @@ export default function ChatPane(props: {
             End
           </CtrlBtn>
         </Show>
-        <button type="button" onClick={() => props.setShowDebug(!props.showDebug)} class="ml-2 rounded-lg border border-zinc-200 px-2 py-1.5 text-[11px] font-medium text-zinc-500 hover:bg-zinc-50">🐛 Debug</button>
       </div>
 
       {/* Messages */}
@@ -284,7 +285,6 @@ export default function ChatPane(props: {
               <QuickChip icon="📎" label="File" onClick={() => chatFileInput?.click()} title="Send a file (IPFS)" />
               <QuickChip icon="🎙️" label="Audio" onClick={props.onStartAudio} title="Start audio call" />
               <QuickChip icon="📹" label="Video" onClick={props.onStartVideo} title="Start video call" />
-              <QuickChip icon="🐛" label="Debug" onClick={() => props.setShowDebug(!props.showDebug)} title="Toggle debug console" />
               <Show when={inCall()}>
                 <QuickChip icon="✕" label="End call" onClick={props.onEndCall} title="End current call" danger />
               </Show>

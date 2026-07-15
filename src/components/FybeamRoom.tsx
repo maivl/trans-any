@@ -5,12 +5,11 @@ import { buildShareUrl, renderQrToCanvas, renderQrDataUrl } from '../lib/qr'
 import { subscribeDebug, clearDebugLog, type DebugEntry } from '../lib/debug'
 import {
   signaling, waitingLong, connStatus, ipfsStatus, messages, remoteStreams, transfers, received,
-  peers, tab, setTab, pushToast, approvalState, pendingRequests,
+  peers, pushToast, approvalState, pendingRequests,
   localStream, callState, micEnabled, camEnabled,
 } from '../store'
 import { useRoom } from '../lib/useRoom'
 import Sidebar from './Sidebar'
-import FilesPane from './FilesPane'
 import ChatPane from './ChatPane'
 import Toaster from './Toaster'
 import ApprovalOverlay from './ApprovalOverlay'
@@ -99,9 +98,7 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
           statusInfo={statusInfo()} signaling={signaling()} waitingLong={waitingLong()} connStatus={connStatus()}
           peerList={Object.values(peers())} peerStates={peerStates()} ipfsLabel={ipfsLabel()} ipfsStatus={ipfsStatus()}
           transfers={transfers()} received={received().filter((f) => f.cid)}
-          tab={tab()} setTab={setTab} onLeave={room.leave}
-          showDebug={showDebug()} setShowDebug={setShowDebug}
-          debugEntries={debugEntries()} onClearDebug={() => clearDebugLog()}
+          onLeave={room.leave}
           pendingRequests={pendingRequests()} onApprove={room.approveJoiner} onDeny={room.denyJoiner}
         />
       </aside>
@@ -133,34 +130,19 @@ function FybeamRoom(props: { room: string; name: string; color: string; roomName
         </header>
 
         <div class="flex min-h-0 flex-1 flex-col">
-          <Show when={tab() === 'files'}>
-            <FilesPane onSendFile={room.handleSendFile} ipfsReady={ipfsStatus() === 'ready'} received={received().filter((f) => f.cid)} onDownload={room.handleDownload} />
-          </Show>
-          <Show when={tab() === 'chat'}>
-            <ChatPane
-              name={props.name} color={props.color}
-              messages={messages()} localStream={localStream()} remoteStreams={remoteStreams()} peers={peers()}
-              callState={callState()} micEnabled={micEnabled()} camEnabled={camEnabled()}
-              onStartAudio={() => room.startCall('audio')} onStartVideo={() => room.startCall('video')}
-              onEndCall={() => room.endCall(false)} onToggleMic={room.toggleMic} onToggleCam={room.toggleCam}
-              onSendText={room.handleSendText} onSendFile={room.handleSendFile} onDownload={room.handleDownload}
-              setShowDebug={setShowDebug} showDebug={showDebug()}
-              debugEntries={debugEntries()} onClearDebug={() => clearDebugLog()}
-            />
-          </Show>
+          <ChatPane
+            name={props.name} color={props.color}
+            messages={messages()} localStream={localStream()} remoteStreams={remoteStreams()} peers={peers()}
+            callState={callState()} micEnabled={micEnabled()} camEnabled={camEnabled()}
+            onStartAudio={() => room.startCall('audio')} onStartVideo={() => room.startCall('video')}
+            onEndCall={() => room.endCall(false)} onToggleMic={room.toggleMic} onToggleCam={room.toggleCam}
+            onSendText={room.handleSendText} onSendFile={room.handleSendFile} onDownload={room.handleDownload}
+            setShowDebug={setShowDebug} showDebug={showDebug()}
+            debugEntries={debugEntries()} onClearDebug={() => clearDebugLog()}
+            ipfsReady={ipfsStatus() === 'ready'}
+            received={received().filter((f) => f.cid)}
+          />
         </div>
-
-        {/* Mobile bottom tab bar */}
-        <nav class="flex gap-1.5 border-t border-zinc-200 bg-white p-3 md:hidden">
-          <button type="button" onClick={() => setTab('files')} class="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium" classList={{ 'bg-zinc-900 text-white': tab() === 'files', 'bg-zinc-100 text-zinc-500': tab() !== 'files' }}>
-            <svg viewBox="0 0 24 24" fill="none" class="h-3.5 w-3.5"><path d="M12 16V4m0 0L8 8m4-4 4 4M4 20h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-            Files
-          </button>
-          <button type="button" onClick={() => setTab('chat')} class="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium" classList={{ 'bg-zinc-900 text-white': tab() === 'chat', 'bg-zinc-100 text-zinc-500': tab() !== 'chat' }}>
-            <svg viewBox="0 0 24 24" fill="none" class="h-3.5 w-3.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-            Chat
-          </button>
-        </nav>
       </main>
 
       <Toaster />
