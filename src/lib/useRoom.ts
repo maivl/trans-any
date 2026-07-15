@@ -1,6 +1,6 @@
 import { onCleanup, onMount, createSignal } from 'solid-js'
 import type { Profile, ChatMessage } from '../types'
-import { createChat, type ChatController } from './chat'
+import { createChat, type ChatController, loadSettings, saveSettings, DEFAULT_GATEWAY_URLS, DEFAULT_RELAY_URLS } from './chat'
 import { initIpfs, getNodeId, addBytes, fetchFile, pinToNetwork } from './ipfs'
 import { generateRoomKey, exportKey, importKey, encryptBytes, decryptBytes, type CryptoKeyLike } from './crypto'
 import { log } from './debug'
@@ -89,6 +89,15 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
           })
         },
         onMessage: (msg) => {
+          if (msg.kind === 'settings' && msg.text) {
+            try {
+              const data = JSON.parse(msg.text)
+              if (data.gateways || data.relays) {
+                saveSettings(data.gateways || DEFAULT_GATEWAY_URLS, data.relays || DEFAULT_RELAY_URLS)
+                pushToast(`Settings updated by ${msg.name}`, 'success')
+              }
+            } catch { /* ignore */ }
+          }
           setMessages((m) => [...m, { ...msg, self: msg.peerId === controller()?.selfId }])
           if (msg.kind === 'file' && msg.file && !msg.self) {
             pushToast(`${msg.name} sent a file`, 'info')
@@ -418,23 +427,36 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
   async function handlePin(cid: string, name: string) {
     pushToast(`Pinning ${name} to IPFS network…`, 'info')
     try {
+      let encB64: string | null = fileCache.get(cid) ?? null
+      if (!encB64) {
+        const peerIds = Object.keys(peers())
+        if (peerIds.length > 0) {
+          log.info('file', 'requesting file for pin via WebRTC', { cid: cid.slice(0, 8) })
+          encB64 = await new Promise<string | null>((resolve) => {
+            const timeout = setTimeout(() => { pendingDownloads.delete(cid); resolve(null) }, 10000)
+            pendingDownloads.set(cid, (data) => { clearTimeout(timeout); pendingDownloads.delete(cid); resolve(data) })
+            controller()?.sendFileRequest(peerIds[0], cid)
+          })
+        }
+      }
       let bytes: Uint8Array
-      const cached = fileCache.get(cid)
-      if (cached) {
-        bytes = new TextEncoder().encode(cached)
+      if (encB64) {
+        bytes = new TextEncoder().encode(encB64)
       } else {
         const data = await fetchFile(cid, 0)
         bytes = data
       }
       const ok = await pinToNetwork(cid, bytes)
       if (ok) {
-        pushToast(`${name} pinned to IPFS network`, 'success')
+        pushToast(`${name} pinned to IPFS`, 'success')
       } else {
-        pushToast(`Could not pin ${name} to any gateway`, 'error')
+        pushToast(`Could not pin ${name}`, 'error')
+        throw new Error('pin failed')
       }
     } catch (e) {
       console.error(e)
       pushToast(`Failed to pin ${name}`, 'error')
+      throw e
     }
   }
 
@@ -469,6 +491,22 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
     pushToast(`Denied ${req?.name ?? 'joiner'}`, 'info')
   }
 
+  function handleSendSettings(gateways: string[], relays: string[]) {
+    saveSettings(gateways, relays)
+    controller()?.sendSettings(gateways, relays)
+    setMessages((m) => [...m, {
+      id: randomId(),
+      peerId: controller()?.selfId ?? 'me',
+      name: profile().name,
+      color: profile().color,
+      kind: 'settings',
+      text: JSON.stringify({ gateways, relays }),
+      time: Date.now(),
+      self: true,
+    }])
+    pushToast('Settings saved & shared', 'success')
+  }
+
   return {
     controller,
     leave,
@@ -476,6 +514,7 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
     handleSendFile,
     handleDownload,
     handlePin,
+    handleSendSettings,
     startCall,
     endCall,
     toggleMic,

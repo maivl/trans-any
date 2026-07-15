@@ -2,6 +2,7 @@ import { createHelia } from 'helia'
 import { unixfs } from '@helia/unixfs'
 import { CID } from 'multiformats/cid'
 import type { Helia } from 'helia'
+import { log } from './debug'
 
 let helia: Helia | null = null
 let fs: ReturnType<typeof unixfs> | null = null
@@ -185,27 +186,81 @@ export async function stopIpfs() {
 }
 
 /**
- * Pin a file to the IPFS network by uploading its bytes to public pinning
- * gateways. This makes the file persistently available even after the sender's
- * browser Helia node goes offline. Returns true if at least one gateway
- * accepted the upload.
+ * Pin a file to the IPFS network. Tries multiple approaches:
+ * 1. Pin locally via Helia's pin API (keeps the block from GC).
+ * 2. Upload the raw bytes to public IPFS gateways via PUT (some gateways
+ *    accept this and cache/pin the content).
+ * 3. Trigger a GET on public gateways (forces them to fetch via bitswap from
+ *    our Helia node, caching the content).
+ * Returns true if at least one method succeeded.
  */
 export async function pinToNetwork(
   cidStr: string,
   bytes: Uint8Array,
   onProgress?: (ratio: number) => void,
 ): Promise<boolean> {
-  const PIN_GATEWAYS = [
+  onProgress?.(0)
+  let success = false
+
+  // 1) Add bytes to local Helia blockstore + pin.
+  try {
+    const node = await initIpfs()
+    const ufs = unixfs(node)
+    // Add the bytes to the local blockstore (creates the CID).
+    const addedCid = await ufs.addBytes(bytes)
+    const cidStr2 = addedCid.toString()
+    if (cidStr2 === cidStr) {
+      // Pin it so it won't be GC'd.
+      for await (const _ of node.pins.add(addedCid)) { /* consume */ }
+      log.info('ipfs', 'pinned locally via Helia', { cid: cidStr.slice(0, 10) })
+      success = true
+    } else {
+      log.warn('ipfs', 'CID mismatch on re-add', { expected: cidStr.slice(0, 10), got: cidStr2.slice(0, 10) })
+    }
+  } catch (e) {
+    console.error('Helia pin failed', e)
+  }
+  onProgress?.(0.3)
+
+  // 2) Upload raw bytes to gateways that accept PUT.
+  const PUT_GATEWAYS = [
+    'https://dweb.link/ipfs/',
+    'https://ipfs.io/ipfs/',
+  ]
+  for (const gw of PUT_GATEWAYS) {
+    try {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), 30000)
+      const resp = await fetch(gw + cidStr, {
+        method: 'PUT',
+        body: bytes,
+        headers: { 'Content-Type': 'application/octet-stream' },
+        signal: ctrl.signal,
+      })
+      clearTimeout(timer)
+      if (resp.ok) {
+        log.info('ipfs', 'pinned via PUT to gateway', { gateway: gw })
+        success = true
+        onProgress?.(1)
+        return true
+      }
+    } catch {
+      // try next
+    }
+  }
+  onProgress?.(0.6)
+
+  // 3) Trigger GET on gateways (forces bitswap fetch + cache).
+  const GET_GATEWAYS = [
     'https://dweb.link/ipfs/',
     'https://ipfs.io/ipfs/',
     'https://cloudflare-ipfs.com/ipfs/',
     'https://gateway.pinata.cloud/ipfs/',
   ]
-  onProgress?.(0)
-  for (const gw of PIN_GATEWAYS) {
+  for (const gw of GET_GATEWAYS) {
     try {
       const ctrl = new AbortController()
-      const timer = setTimeout(() => ctrl.abort(), 30000)
+      const timer = setTimeout(() => ctrl.abort(), 15000)
       const resp = await fetch(gw + cidStr, {
         method: 'GET',
         redirect: 'follow',
@@ -213,13 +268,15 @@ export async function pinToNetwork(
       })
       clearTimeout(timer)
       if (resp.ok) {
+        log.info('ipfs', 'cached via GET on gateway', { gateway: gw })
+        success = true
         onProgress?.(1)
         return true
       }
     } catch {
-      // try next gateway
+      // try next
     }
   }
   onProgress?.(1)
-  return false
+  return success
 }

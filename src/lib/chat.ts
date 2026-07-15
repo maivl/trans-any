@@ -37,7 +37,7 @@ export interface ChatController {
   sendFileChunk: (to: string, chunk: { cid: string; index: number; total: number; data: string }) => void
   /** Request file bytes from a peer over WebRTC (CID → encrypted base64). */
   sendFileRequest: (to: string, cid: string) => void
-  /** Disconnect a specific peer (e.g. after denying approval). */
+  sendSettings: (gateways: string[], relays: string[]) => void
   removePeer: (peerId: string) => void
   leave: () => void
 }
@@ -73,7 +73,7 @@ const APP_ID = 'zai-trystero-p2p-chat-v1'
  * some are blocked or rate-limited on their network. damus is excluded
  * (aggressively rate-limits Trystero's announces).
  */
-const RELAY_URLS = [
+export const DEFAULT_RELAY_URLS = [
   'wss://nos.lol',
   'wss://relay.nostrdice.com',
   'wss://nostr.data.haus',
@@ -85,7 +85,35 @@ const RELAY_URLS = [
   'wss://relay.nostr.net',
 ]
 
-/** STUN servers for reflexive ICE candidates. */
+export const DEFAULT_GATEWAY_URLS = [
+  'https://dweb.link/ipfs/',
+  'https://ipfs.io/ipfs/',
+  'https://cloudflare-ipfs.com/ipfs/',
+  'https://gateway.pinata.cloud/ipfs/',
+]
+
+const SETTINGS_KEY = 'fybeam-settings'
+
+export function loadSettings(): { gateways: string[]; relays: string[] } {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      return {
+        gateways: parsed.gateways?.length ? parsed.gateways : DEFAULT_GATEWAY_URLS,
+        relays: parsed.relays?.length ? parsed.relays : DEFAULT_RELAY_URLS,
+      }
+    }
+  } catch { /* ignore */ }
+  return { gateways: DEFAULT_GATEWAY_URLS, relays: DEFAULT_RELAY_URLS }
+}
+
+export function saveSettings(gateways: string[], relays: string[]) {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ gateways, relays }))
+  } catch { /* ignore */ }
+}
+
 const STUN_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
@@ -113,13 +141,14 @@ export function createChat(
 ): ChatController {
   const selfId = randomId()
   const roomKey = () => (getRoomKey ? getRoomKey() : null)
+  const settings = loadSettings()
   const config = {
     appId: APP_ID,
     rtcConfig: buildRtcConfig(),
-    relayConfig: { urls: RELAY_URLS },
+    relayConfig: { urls: settings.relays },
   } as Record<string, unknown>
 
-  log.info('chat', 'joining room', { room: profile.room, name: profile.name, relays: RELAY_URLS.length })
+  log.info('chat', 'joining room', { room: profile.room, name: profile.name, relays: settings.relays.length })
 
   // JoinRoomCallbacks (3rd arg): onPeerHandshake fires when signaling
   // discovers a peer (before the WebRTC data channel opens); onJoinError fires
@@ -204,6 +233,17 @@ export function createChat(
       time: m.time,
     }
     msgAction.send(wire).catch((e) => log.error('msg', 'send failed', e))
+  }
+
+  const sendSettings = (gateways: string[], relays: string[]) => {
+    msgAction.send({
+      id: randomId(),
+      name: profile.name,
+      color: profile.color,
+      kind: 'settings',
+      text: JSON.stringify({ gateways, relays }),
+      time: Date.now(),
+    }).catch(() => {})
   }
 
   const sendMedia = (m: WireMedia, to?: string[]) => {
@@ -456,6 +496,7 @@ export function createChat(
     sendRoomKey,
     sendFileChunk,
     sendFileRequest,
+    sendSettings,
     removePeer,
     leave,
   }

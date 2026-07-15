@@ -1,8 +1,10 @@
+import { createSignal, Show } from 'solid-js'
 import { formatBytes, shortCid, gatewayUrl, fileIconKey } from '../lib/utils'
 import type { FileMeta } from '../types'
 import { Icon, type IconKey } from './icons'
 
-/** A file message bubble shown in the chat (with Download + gateway link). */
+type ActionState = 'idle' | 'loading' | 'success' | 'error'
+
 export default function FileBubble(props: {
   file: FileMeta
   self: boolean
@@ -10,6 +12,33 @@ export default function FileBubble(props: {
   onDownload: (cid: string, name: string, size: number, from: string) => void
   onPin: (cid: string, name: string) => void
 }) {
+  const [pinState, setPinState] = createSignal<ActionState>('idle')
+  const [dlState, setDlState] = createSignal<ActionState>('idle')
+
+  const handlePin = async () => {
+    if (pinState() === 'loading') return
+    setPinState('loading')
+    try {
+      await props.onPin(props.file.cid, props.file.name)
+      setPinState('success')
+    } catch {
+      setPinState('error')
+    }
+    setTimeout(() => setPinState('idle'), 3000)
+  }
+
+  const handleDownload = async () => {
+    if (dlState() === 'loading') return
+    setDlState('loading')
+    try {
+      await props.onDownload(props.file.cid, props.file.name, props.file.size, props.from)
+      setDlState('success')
+    } catch {
+      setDlState('error')
+    }
+    setTimeout(() => setDlState('idle'), 3000)
+  }
+
   return (
     <div
       class="w-60 max-w-[80vw] rounded-2xl border p-2.5 sm:w-64"
@@ -19,7 +48,9 @@ export default function FileBubble(props: {
       }}
     >
       <div class="flex items-center gap-2.5">
-        <span class="flex h-6 w-6 shrink-0 items-center justify-center text-zinc-500"><Icon name={fileIconKey(props.file.mime) as IconKey} class="h-5 w-5" /></span>
+        <span class="flex h-6 w-6 shrink-0 items-center justify-center text-zinc-500">
+          <Icon name={fileIconKey(props.file.mime) as IconKey} class="h-5 w-5" />
+        </span>
         <div class="min-w-0 flex-1">
           <div class="min-w-0 break-words text-sm font-medium [overflow-wrap:anywhere]">{props.file.name}</div>
           <div class="flex items-center gap-1.5 text-[11px] text-zinc-400">
@@ -40,26 +71,59 @@ export default function FileBubble(props: {
           >
             gateway ↗
           </a>
-          <button
-            type="button"
-            onClick={() => props.onPin(props.file.cid, props.file.name)}
-            class="flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-[11px] font-medium text-zinc-500 transition hover:bg-zinc-100 active:scale-95"
+          <ActionButton
+            state={pinState()}
+            onClick={handlePin}
             title="Pin to IPFS network"
-          >
-            <svg viewBox="0 0 24 24" fill="none" class="h-3 w-3">
-              <path d="M12 17v5M9 10.76V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4.76a2 2 0 0 0 .5 1.32L18 15H6l2.5-2.92a2 2 0 0 0 .5-1.32Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-            Pin
-          </button>
-          <button
-            type="button"
-            onClick={() => props.onDownload(props.file.cid, props.file.name, props.file.size, props.from)}
-            class="rounded-md bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-900 transition hover:bg-zinc-100 active:scale-95"
-          >
-            Download
-          </button>
+            idleIcon={<svg viewBox="0 0 24 24" fill="none" class="h-4 w-4"><path d="M12 17v5M9 10.76V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4.76a2 2 0 0 0 .5 1.32L18 15H6l2.5-2.92a2 2 0 0 0 .5-1.32Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>}
+          />
+          <ActionButton
+            state={dlState()}
+            onClick={handleDownload}
+            title="Download"
+            idleIcon={<Icon name="download" class="h-4 w-4" />}
+          />
         </div>
       </div>
     </div>
+  )
+}
+
+function ActionButton(props: {
+  state: ActionState
+  onClick: () => void
+  title: string
+  idleIcon: any
+}) {
+  const colorClass = () => {
+    switch (props.state) {
+      case 'loading': return 'text-zinc-400'
+      case 'success': return 'text-emerald-500'
+      case 'error': return 'text-rose-500'
+      default: return 'text-amber-400'
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      title={props.title}
+      class={`flex h-7 w-7 items-center justify-center rounded-lg transition active:scale-90 ${colorClass()}`}
+    >
+      <Show when={props.state === 'loading'}>
+        <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4 animate-spin">
+          <path d="M12 2a10 10 0 1 0 10 10" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
+        </svg>
+      </Show>
+      <Show when={props.state === 'success'}>
+        <Icon name="check" class="h-4 w-4" />
+      </Show>
+      <Show when={props.state === 'error'}>
+        <Icon name="warn" class="h-4 w-4" />
+      </Show>
+      <Show when={props.state === 'idle'}>
+        {props.idleIcon}
+      </Show>
+    </button>
   )
 }

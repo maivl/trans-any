@@ -13,7 +13,12 @@ export interface FileMeta {
   mime: string
 }
 
-export type MessageKind = 'text' | 'file' | 'system'
+export type MessageKind = 'text' | 'file' | 'system' | 'settings'
+
+export interface SettingsData {
+  gateways: string[]
+  relays: string[]
+}
 
 export interface ChatMessage {
   id: string
@@ -23,6 +28,7 @@ export interface ChatMessage {
   kind: MessageKind
   text?: string
   file?: FileMeta
+  settings?: SettingsData
   time: number
   self?: boolean
 }

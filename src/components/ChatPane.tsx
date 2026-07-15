@@ -1,6 +1,7 @@
-import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
+import { For, Show, createEffect, createMemo, createSignal, onMount } from 'solid-js'
 import type { ChatMessage, CallState } from '../types'
 import { formatTime } from '../lib/utils'
+import { loadSettings } from '../lib/chat'
 import type { DebugEntry } from '../lib/debug'
 import VideoTile from './VideoTile'
 import FileBubble from './FileBubble'
@@ -29,6 +30,7 @@ export default function ChatPane(props: {
   onSendFile: (f: File) => void
   onDownload: (cid: string, name: string, size: number, from: string) => void
   onPin: (cid: string, name: string) => void
+  onSendSettings: (gateways: string[], relays: string[]) => void
   showDebug: boolean
   setShowDebug: (v: boolean) => void
   debugEntries: DebugEntry[]
@@ -40,6 +42,7 @@ export default function ChatPane(props: {
   const [slashOpen, setSlashOpen] = createSignal(false)
   const [slashQuery, setSlashQuery] = createSignal('')
   const [slashIndex, setSlashIndex] = createSignal(0)
+  const [showSettings, setShowSettings] = createSignal(false)
   let textarea: HTMLTextAreaElement | undefined
   let scrollEl: HTMLDivElement | undefined
   let chatFileInput: HTMLInputElement | undefined
@@ -61,6 +64,7 @@ export default function ChatPane(props: {
     { cmd: 'audio', label: 'Voice call', desc: 'Start an audio call with peers', icon: 'audio', run: () => props.onStartAudio() },
     { cmd: 'video', label: 'Video call', desc: 'Start a video call with peers', icon: 'video', run: () => props.onStartVideo() },
     { cmd: 'file', label: 'Send file', desc: 'Attach and send a file via IPFS', icon: 'file', run: () => chatFileInput?.click() },
+    { cmd: 'setting', label: 'Settings', desc: 'Configure IPFS gateways & relay nodes', icon: 'file', run: () => setShowSettings(true) },
     { cmd: 'clear', label: 'Clear debug', desc: 'Clear the debug console log', icon: 'clear', run: () => props.onClearDebug() },
   ])
 
@@ -232,18 +236,19 @@ export default function ChatPane(props: {
                         <span class="text-[10px] text-zinc-400">{formatTime(m.time)}</span>
                       </div>
                     </Show>
-                    <Show
-                      when={m.kind === 'file' && m.file}
-                      fallback={
-                        <div
-                          class="min-w-0 max-w-full whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm leading-relaxed [overflow-wrap:anywhere]"
-                          classList={{ 'rounded-br-md bg-zinc-900 text-white': isSelf(m), 'rounded-bl-md border border-zinc-200 bg-white text-zinc-800': !isSelf(m) }}
-                        >
-                          {m.text}
-                        </div>
-                      }
-                    >
+                    <Show when={m.kind === 'settings'}>
+                      <SettingsBubble self={isSelf(m)} text={m.text || ''} from={m.name} />
+                    </Show>
+                    <Show when={m.kind === 'file' && m.file}>
                       <FileBubble file={m.file!} self={isSelf(m)} onDownload={props.onDownload} onPin={props.onPin} from={m.name} />
+                    </Show>
+                    <Show when={m.kind === 'text' || (m.kind !== 'settings' && m.kind !== 'file')}>
+                      <div
+                        class="min-w-0 max-w-full whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm leading-relaxed [overflow-wrap:anywhere]"
+                        classList={{ 'rounded-br-md bg-zinc-900 text-white': isSelf(m), 'rounded-bl-md border border-zinc-200 bg-white text-zinc-800': !isSelf(m) }}
+                      >
+                        {m.text}
+                      </div>
                     </Show>
                   </div>
                 </div>
@@ -326,6 +331,75 @@ export default function ChatPane(props: {
       <Show when={props.showDebug}>
         <DebugConsole entries={props.debugEntries} onClose={() => props.setShowDebug(false)} onClear={props.onClearDebug} />
       </Show>
+
+      <Show when={showSettings()}>
+        <SettingsDialog onClose={() => setShowSettings(false)} onSave={(g, r) => { props.onSendSettings(g, r); setShowSettings(false) }} />
+      </Show>
+    </div>
+  )
+}
+
+function SettingsBubble(props: { self: boolean; text: string; from: string }) {
+  let data: { gateways?: string[]; relays?: string[] } = {}
+  try { data = JSON.parse(props.text) } catch { /* ignore */ }
+  return (
+    <div
+      class="w-64 max-w-[80vw] rounded-2xl border p-3"
+      classList={{ 'rounded-br-md border-zinc-800 bg-zinc-900 text-white': props.self, 'rounded-bl-md border-zinc-200 bg-white text-zinc-800': !props.self }}
+    >
+      <div class="mb-2 flex items-center gap-2 text-sm font-medium">
+        <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4 text-zinc-400"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" stroke-width="2" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        Settings shared
+      </div>
+      <div class="space-y-1.5 text-[11px] text-zinc-400">
+        <div>
+          <span class="font-medium text-zinc-500">IPFS Gateways:</span>
+          <div class="mt-0.5 space-y-0.5">
+            {(data.gateways || []).map((g) => <div class="truncate font-mono text-[10px]">{g}</div>)}
+          </div>
+        </div>
+        <div>
+          <span class="font-medium text-zinc-500">Relay Nodes:</span>
+          <div class="mt-0.5 space-y-0.5">
+            {(data.relays || []).map((r) => <div class="truncate font-mono text-[10px]">{r}</div>)}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SettingsDialog(props: { onClose: () => void; onSave: (gateways: string[], relays: string[]) => void }) {
+  const [gateways, setGateways] = createSignal('')
+  const [relays, setRelays] = createSignal('')
+  onMount(() => {
+    const s = loadSettings()
+    setGateways(s.gateways.join('\n'))
+    setRelays(s.relays.join('\n'))
+  })
+  const save = () => {
+    const g = gateways().split('\n').map((s) => s.trim()).filter(Boolean)
+    const r = relays().split('\n').map((s) => s.trim()).filter(Boolean)
+    props.onSave(g, r)
+  }
+  return (
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && props.onClose()}>
+      <div class="flex max-h-[80vh] w-full max-w-md flex-col overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl">
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="text-base font-semibold text-zinc-900">Settings</h2>
+          <button type="button" onClick={props.onClose} class="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
+            <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+          </button>
+        </div>
+        <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400">IPFS Gateways (one per line)</label>
+        <textarea value={gateways()} onInput={(e) => setGateways(e.currentTarget.value)} rows={4} class="mb-4 w-full resize-none rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-xs outline-none focus:border-zinc-900 focus:bg-white" />
+        <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400">Nostr Relay Nodes (one per line)</label>
+        <textarea value={relays()} onInput={(e) => setRelays(e.currentTarget.value)} rows={6} class="mb-4 w-full resize-none rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-xs outline-none focus:border-zinc-900 focus:bg-white" />
+        <div class="flex justify-end gap-2">
+          <button type="button" onClick={props.onClose} class="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+          <button type="button" onClick={save} class="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-800">Save &amp; Share</button>
+        </div>
+      </div>
     </div>
   )
 }
