@@ -182,6 +182,15 @@ export default function ChatPane(props: {
         </div>
       </Show>
 
+      {/* Call controls bar — Start a call / Audio / Video (only when not in call) */}
+      <Show when={!inCall()}>
+        <div class="flex items-center justify-center gap-2 border-b border-zinc-200 bg-white px-4 py-2.5">
+          <span class="mr-1 text-xs text-zinc-400">Start a call</span>
+          <CtrlBtn kind="ghost" onClick={props.onStartAudio}><Icon name="audio" class="h-4 w-4" /> Audio</CtrlBtn>
+          <CtrlBtn kind="ghost" onClick={props.onStartVideo}><Icon name="video" class="h-4 w-4" /> Video</CtrlBtn>
+        </div>
+      </Show>
+
       {/* Messages */}
       <div ref={scrollEl} class="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
         <div class="mx-auto flex max-w-2xl flex-col gap-1">
@@ -304,10 +313,6 @@ export default function ChatPane(props: {
             {/* Quick-action chips row (bottom) */}
             <div class="flex items-center gap-1.5 overflow-x-auto px-3 pb-2.5 pt-1">
               <QuickChip icon="file" label="File" onClick={() => chatFileInput?.click()} title="Send a file (IPFS)" />
-              <Show when={!inCall()} fallback={<></>}>
-                <QuickChip icon="audio" label="Audio" onClick={props.onStartAudio} title="Start audio call" />
-                <QuickChip icon="video" label="Video" onClick={props.onStartVideo} title="Start video call" />
-              </Show>
               <Show when={inCall()}>
                 <QuickChip icon={props.micEnabled ? 'mic-on' : 'mic-off'} label="" onClick={props.onToggleMic} title={props.micEnabled ? 'Mute' : 'Unmute'} />
                 <Show when={props.callState === 'video'}>
