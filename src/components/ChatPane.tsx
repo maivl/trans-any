@@ -7,7 +7,7 @@ import VideoTile from './VideoTile'
 import FileBubble from './FileBubble'
 import CtrlBtn from './CtrlBtn'
 import DebugConsole from './DebugConsole'
-import SlashMenu, { type SlashCommand } from './SlashMenu'
+import type { SlashCommand } from './SlashMenu'
 import { Icon } from './icons'
 
 /** Chat tab: video tiles, call controls, message list, pill-shaped input. */
@@ -265,13 +265,33 @@ export default function ChatPane(props: {
         <div class="relative mx-auto max-w-2xl">
           {/* Slash command menu */}
           <Show when={slashOpen()}>
-            <SlashMenu
-              query={slashQuery()}
-              commands={filteredCommands()}
-              activeIndex={slashIndex()}
-              onPick={pickSlash}
-              onHover={setSlashIndex}
-            />
+            <div class="mb-2 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+              <div class="border-b border-zinc-100 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                Quick commands
+              </div>
+              <div class="max-h-48 overflow-y-auto py-1">
+                <For each={filteredCommands()}>
+                  {(c, i) => (
+                    <button
+                      type="button"
+                      onMouseEnter={() => setSlashIndex(i())}
+                      onClick={() => pickSlash(c)}
+                      class="flex w-full items-center gap-2.5 px-3 py-2 text-left transition"
+                      classList={{ 'bg-zinc-100': i() === slashIndex(), 'hover:bg-zinc-50': i() !== slashIndex() }}
+                    >
+                      <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500"><Icon name={c.icon} class="h-4 w-4" /></span>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-1.5">
+                          <span class="font-mono text-xs font-medium text-zinc-900">/{c.cmd}</span>
+                          <span class="text-xs text-zinc-500">{c.label}</span>
+                        </div>
+                        <div class="truncate text-[10px] text-zinc-400">{c.desc}</div>
+                      </div>
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
           </Show>
 
           <div class="rounded-3xl border border-zinc-200 bg-white shadow-sm transition focus-within:border-zinc-400 focus-within:shadow-md">
@@ -346,45 +366,57 @@ function SettingsBubble(props: {
   onSave: (gateways: string[], relays: string[]) => void
 }) {
   const [editing, setEditing] = createSignal(false)
-  const [items, setItems] = createSignal<SettingsItem[]>([])
-  const [newUrl, setNewUrl] = createSignal('')
-  const [newType, setNewType] = createSignal<'gateway' | 'relay'>('gateway')
+  const [gwText, setGwText] = createSignal('')
+  const [relayText, setRelayText] = createSignal('')
   const [firstGateway, setFirstGateway] = createSignal('')
   const [firstRelay, setFirstRelay] = createSignal('')
+  const [saveState, setSaveState] = createSignal<'idle' | 'loading' | 'success' | 'error'>('idle')
+  const [resetState, setResetState] = createSignal<'idle' | 'loading' | 'success' | 'error'>('idle')
 
-  onMount(() => {
+  const parseAndSet = (text: string) => {
     try {
-      const data = JSON.parse(props.text)
-      const list: SettingsItem[] = [
-        ...(data.gateways || []).map((u: string) => ({ url: u, type: 'gateway' as const })),
-        ...(data.relays || []).map((u: string) => ({ url: u, type: 'relay' as const })),
-      ]
-      setItems(list)
-      setFirstGateway(data.gateways?.[0] || '')
-      setFirstRelay(data.relays?.[0] || '')
+      const data = JSON.parse(text)
+      const gws = data.gateways || []
+      const rls = data.relays || []
+      setGwText(gws.join('\n'))
+      setRelayText(rls.join('\n'))
+      setFirstGateway(gws[0] || '')
+      setFirstRelay(rls[0] || '')
     } catch { /* ignore */ }
-  })
-
-  const remove = (idx: number) => {
-    setItems((prev) => prev.filter((_, i) => i !== idx))
   }
 
-  const add = () => {
-    const u = newUrl().trim()
-    if (!u) return
-    setItems((prev) => [...prev, { url: u, type: newType() }])
-    setNewUrl('')
+  onMount(() => parseAndSet(props.text))
+
+  const gateways = () => gwText().split('\n').map(s => s.trim()).filter(Boolean)
+  const relays = () => relayText().split('\n').map(s => s.trim()).filter(Boolean)
+
+  const save = async () => {
+    setSaveState('loading')
+    try {
+      const gws = gateways()
+      const rls = relays()
+      props.onSave(gws, rls)
+      setGwText(gws.join('\n'))
+      setRelayText(rls.join('\n'))
+      setFirstGateway(gws[0] || '')
+      setFirstRelay(rls[0] || '')
+      setSaveState('success')
+    } catch { setSaveState('error') }
+    setTimeout(() => setSaveState('idle'), 3000)
   }
 
-  const save = () => {
-    const gateways = items().filter((it) => it.type === 'gateway').map((it) => it.url)
-    const relays = items().filter((it) => it.type === 'relay').map((it) => it.url)
-    props.onSave(gateways, relays)
-    setEditing(false)
+  const reset = async () => {
+    setResetState('loading')
+    try {
+      setGwText(DEFAULT_GATEWAY_URLS.join('\n'))
+      setRelayText(DEFAULT_RELAY_URLS.join('\n'))
+      setFirstGateway(DEFAULT_GATEWAY_URLS[0])
+      setFirstRelay(DEFAULT_RELAY_URLS[0])
+      props.onSave(DEFAULT_GATEWAY_URLS, DEFAULT_RELAY_URLS)
+      setResetState('success')
+    } catch { setResetState('error') }
+    setTimeout(() => setResetState('idle'), 3000)
   }
-
-  const gateways = () => items().filter((it) => it.type === 'gateway')
-  const relays = () => items().filter((it) => it.type === 'relay')
 
   return (
     <div
@@ -405,25 +437,25 @@ function SettingsBubble(props: {
       <Show when={!editing()}>
         <div class="space-y-3">
           <div>
-            <div class="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-blue-500">
-              <span class="h-1.5 w-1.5 rounded-full bg-blue-500" />
+            <div class="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              <span class="h-1.5 w-1.5 rounded-full bg-zinc-400" />
               IPFS Gateways
             </div>
-            <div class="space-y-1">
+            <div class="space-y-0.5">
               <For each={gateways()}>
-                {(it) => (
+                {(url) => (
                   <div
-                    class="flex items-center gap-2 rounded-md px-2 py-1 text-[11px] transition"
+                    class="flex items-center gap-2 rounded-md px-2 py-1 cursor-pointer transition"
                     classList={{
-                      'bg-emerald-500/15 ring-1 ring-emerald-500/40': firstGateway() === it.url,
-                      'hover:bg-zinc-100 dark:hover:bg-zinc-800': firstGateway() !== it.url,
+                      'bg-zinc-100 dark:bg-zinc-800': firstGateway() === url,
+                      'hover:bg-zinc-50 dark:hover:bg-zinc-800/50': firstGateway() !== url,
                     }}
-                    onClick={() => setFirstGateway(it.url)}
+                    onClick={() => setFirstGateway(url)}
                   >
-                    <Show when={firstGateway() === it.url}>
-                      <svg viewBox="0 0 24 24" fill="none" class="h-3 w-3 shrink-0 text-emerald-500"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                    <Show when={firstGateway() === url} fallback={<span class="h-3 w-3 shrink-0" />}>
+                      <svg viewBox="0 0 24 24" fill="none" class="h-3 w-3 shrink-0 text-zinc-700 dark:text-zinc-300"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>
                     </Show>
-                    <span class="truncate font-mono text-[10px] text-zinc-400" classList={{ 'text-emerald-600 dark:text-emerald-400': firstGateway() === it.url }}>{it.url}</span>
+                    <span class="truncate font-mono text-[10px] text-zinc-500" classList={{ 'text-zinc-800 dark:text-zinc-200 font-medium': firstGateway() === url }}>{url}</span>
                   </div>
                 )}
               </For>
@@ -431,114 +463,91 @@ function SettingsBubble(props: {
           </div>
 
           <div>
-            <div class="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-purple-500">
-              <span class="h-1.5 w-1.5 rounded-full bg-purple-500" />
+            <div class="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              <span class="h-1.5 w-1.5 rounded-full bg-zinc-400" />
               Relay Nodes
             </div>
-            <div class="space-y-1">
+            <div class="space-y-0.5">
               <For each={relays()}>
-                {(it) => (
+                {(url) => (
                   <div
-                    class="flex items-center gap-2 rounded-md px-2 py-1 text-[11px] transition"
+                    class="flex items-center gap-2 rounded-md px-2 py-1 cursor-pointer transition"
                     classList={{
-                      'bg-emerald-500/15 ring-1 ring-emerald-500/40': firstRelay() === it.url,
-                      'hover:bg-zinc-100 dark:hover:bg-zinc-800': firstRelay() !== it.url,
+                      'bg-zinc-100 dark:bg-zinc-800': firstRelay() === url,
+                      'hover:bg-zinc-50 dark:hover:bg-zinc-800/50': firstRelay() !== url,
                     }}
-                    onClick={() => setFirstRelay(it.url)}
+                    onClick={() => setFirstRelay(url)}
                   >
-                    <Show when={firstRelay() === it.url}>
-                      <svg viewBox="0 0 24 24" fill="none" class="h-3 w-3 shrink-0 text-emerald-500"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                    <Show when={firstRelay() === url} fallback={<span class="h-3 w-3 shrink-0" />}>
+                      <svg viewBox="0 0 24 24" fill="none" class="h-3 w-3 shrink-0 text-zinc-700 dark:text-zinc-300"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>
                     </Show>
-                    <span class="truncate font-mono text-[10px] text-zinc-400" classList={{ 'text-emerald-600 dark:text-emerald-400': firstRelay() === it.url }}>{it.url}</span>
+                    <span class="truncate font-mono text-[10px] text-zinc-500" classList={{ 'text-zinc-800 dark:text-zinc-200 font-medium': firstRelay() === url }}>{url}</span>
                   </div>
                 )}
               </For>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            class="flex items-center gap-1 text-[11px] font-medium text-amber-500 transition hover:text-amber-600"
-          >
-            <svg viewBox="0 0 24 24" fill="none" class="h-3.5 w-3.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-            Edit
-          </button>
+          <div class="flex items-center justify-end gap-2 pt-1">
+            <button type="button" onClick={() => setEditing(true)} class="flex h-7 w-7 items-center justify-center rounded-lg text-amber-400 transition hover:bg-amber-50 active:scale-90" title="Edit">
+              <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </button>
+          </div>
         </div>
       </Show>
 
       <Show when={editing()}>
         <div class="space-y-3">
           <div>
-            <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-blue-500">IPFS Gateways</div>
-            <div class="space-y-1">
-              <For each={items().filter((it) => it.type === 'gateway')}>
-                {(it) => {
-                  const idx = () => items().indexOf(it)
-                  return (
-                    <div class="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={it.url}
-                        onInput={(e) => setItems((prev) => prev.map((x, j) => j === idx() ? { ...x, url: e.currentTarget.value } : x))}
-                        class="min-w-0 flex-1 rounded border border-zinc-300 bg-zinc-50 px-2 py-1 font-mono text-[10px] outline-none focus:border-zinc-500"
-                      />
-                      <button type="button" onClick={() => remove(idx())} class="shrink-0 text-rose-400 hover:text-rose-600">
-                        <svg viewBox="0 0 24 24" fill="none" class="h-3.5 w-3.5"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
-                      </button>
-                    </div>
-                  )
-                }}
-              </For>
-            </div>
-          </div>
-
-          <div>
-            <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-purple-500">Relay Nodes</div>
-            <div class="space-y-1">
-              <For each={items().filter((it) => it.type === 'relay')}>
-                {(it) => {
-                  const idx = () => items().indexOf(it)
-                  return (
-                    <div class="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={it.url}
-                        onInput={(e) => setItems((prev) => prev.map((x, j) => j === idx() ? { ...x, url: e.currentTarget.value } : x))}
-                        class="min-w-0 flex-1 rounded border border-zinc-300 bg-zinc-50 px-2 py-1 font-mono text-[10px] outline-none focus:border-zinc-500"
-                      />
-                      <button type="button" onClick={() => remove(idx())} class="shrink-0 text-rose-400 hover:text-rose-600">
-                        <svg viewBox="0 0 24 24" fill="none" class="h-3.5 w-3.5"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
-                      </button>
-                    </div>
-                  )
-                }}
-              </For>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-2 pt-1">
-            <select
-              value={newType()}
-              onChange={(e) => setNewType(e.currentTarget.value as 'gateway' | 'relay')}
-              class="shrink-0 rounded border border-zinc-300 bg-zinc-50 px-1.5 py-1 text-[10px] outline-none"
-            >
-              <option value="gateway">Gateway</option>
-              <option value="relay">Relay</option>
-            </select>
-            <input
-              type="text"
-              value={newUrl()}
-              onInput={(e) => setNewUrl(e.currentTarget.value)}
-              onKeyDown={(e) => e.key === 'Enter' && add()}
-              placeholder="Add URL..."
-              class="min-w-0 flex-1 rounded border border-zinc-300 bg-zinc-50 px-2 py-1 font-mono text-[10px] outline-none focus:border-zinc-500"
+            <label class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">IPFS Gateways</label>
+            <textarea
+              value={gwText()}
+              onInput={(e) => setGwText(e.currentTarget.value)}
+              rows={4}
+              class="w-full resize-none rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 font-mono text-[10px] leading-relaxed outline-none focus:border-zinc-400 focus:bg-white"
+              placeholder="https://dweb.link/ipfs/"
             />
-            <button type="button" onClick={add} class="shrink-0 rounded bg-zinc-200 px-2 py-1 text-[10px] font-medium text-zinc-700 hover:bg-zinc-300">+</button>
           </div>
-          <div class="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={() => setEditing(false)} class="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
-            <button type="button" onClick={save} class="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800">Save</button>
+          <div>
+            <label class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Relay Nodes</label>
+            <textarea
+              value={relayText()}
+              onInput={(e) => setRelayText(e.currentTarget.value)}
+              rows={5}
+              class="w-full resize-none rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 font-mono text-[10px] leading-relaxed outline-none focus:border-zinc-400 focus:bg-white"
+              placeholder="wss://nos.lol"
+            />
+          </div>
+          <div class="flex items-center justify-end gap-2">
+            <Show when={resetState() === 'loading'}>
+              <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4 animate-spin text-zinc-400"><path d="M12 2a10 10 0 1 0 10 10" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" /></svg>
+            </Show>
+            <Show when={resetState() === 'success'}>
+              <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4 text-emerald-500"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </Show>
+            <Show when={resetState() === 'error'}>
+              <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4 text-rose-500"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0ZM12 9v4M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </Show>
+            <button type="button" onClick={reset} disabled={resetState() === 'loading'} class="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 active:scale-90 disabled:opacity-40" title="Reset to defaults">
+              <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </button>
+
+            <Show when={saveState() === 'loading'}>
+              <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4 animate-spin text-zinc-400"><path d="M12 2a10 10 0 1 0 10 10" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" /></svg>
+            </Show>
+            <Show when={saveState() === 'success'}>
+              <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4 text-emerald-500"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </Show>
+            <Show when={saveState() === 'error'}>
+              <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4 text-rose-500"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0ZM12 9v4M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </Show>
+            <button type="button" onClick={save} disabled={saveState() === 'loading'} class="flex h-7 w-7 items-center justify-center rounded-lg text-amber-400 transition hover:bg-amber-50 active:scale-90 disabled:opacity-40" title="Save">
+              <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </button>
+
+            <button type="button" onClick={() => setEditing(false)} class="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 active:scale-90" title="Cancel">
+              <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+            </button>
           </div>
         </div>
       </Show>

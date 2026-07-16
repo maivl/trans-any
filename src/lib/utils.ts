@@ -1,5 +1,7 @@
 /** Small utility helpers shared across the app. */
 
+import { loadSettings } from './chat'
+
 const PALETTE = [
   '#0ea5e9', '#f43f5e', '#f59e0b', '#8b5cf6', '#10b981',
   '#ec4899', '#14b8a6', '#6366f1', '#eab308', '#06b6d4',
@@ -94,7 +96,10 @@ export function shortCid(cid: string): string {
 }
 
 export function gatewayUrl(cid: string): string {
-  return `https://dweb.link/ipfs/${cid}`
+  const settings = loadSettings()
+  const first = settings.gateways[0] || 'https://dweb.link/ipfs/'
+  const base = first.endsWith('/') ? first : first + '/'
+  return base + cid
 }
 
 /** Map a MIME type to an icon key (used by the Icon component). */
