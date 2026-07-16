@@ -30,7 +30,7 @@ export default function ChatPane(props: {
   onSendFile: (f: File) => void
   onDownload: (cid: string, name: string, size: number, from: string) => void
   onPin: (cid: string, name: string) => void
-  onSendSettings: (gateways: string[], relays: string[]) => void
+  onSendSettings: (gateways: string[], relays: string[], firstGateway: string, firstRelay: string) => void
   showDebug: boolean
   setShowDebug: (v: boolean) => void
   debugEntries: DebugEntry[]
@@ -63,7 +63,7 @@ export default function ChatPane(props: {
     { cmd: 'audio', label: 'Voice call', desc: 'Start an audio call with peers', icon: 'audio', run: () => props.onStartAudio() },
     { cmd: 'video', label: 'Video call', desc: 'Start a video call with peers', icon: 'video', run: () => props.onStartVideo() },
     { cmd: 'file', label: 'Send file', desc: 'Attach and send a file via IPFS', icon: 'file', run: () => chatFileInput?.click() },
-    { cmd: 'setting', label: 'Settings', desc: 'Configure IPFS gateways & relay nodes', icon: 'file', run: () => props.onSendSettings(loadSettings().gateways, loadSettings().relays) },
+    { cmd: 'setting', label: 'Settings', desc: 'Configure IPFS gateways & relay nodes', icon: 'file', run: () => { const s = loadSettings(); props.onSendSettings(s.gateways, s.relays, s.firstGateway, s.firstRelay) } },
     { cmd: 'clear', label: 'Clear debug', desc: 'Clear the debug console log', icon: 'clear', run: () => props.onClearDebug() },
   ])
 
@@ -183,31 +183,6 @@ export default function ChatPane(props: {
           </div>
         </div>
       </Show>
-
-      {/* Call controls + debug toggle */}
-      <div class="flex items-center justify-center gap-2 border-b border-zinc-200 bg-white px-4 py-2.5">
-        <Show
-          when={inCall()}
-          fallback={
-            <>
-              <span class="mr-1 text-xs text-zinc-400">{hasRemote() ? 'Peer is live · join with' : 'Start a call'}</span>
-              <CtrlBtn kind="ghost" onClick={props.onStartAudio}><Icon name="audio" class="h-4 w-4" /> Audio</CtrlBtn>
-              <CtrlBtn kind="ghost" onClick={props.onStartVideo}><Icon name="video" class="h-4 w-4" /> Video</CtrlBtn>
-            </>
-          }
-        >
-          <CtrlBtn kind="toggle" active={props.micEnabled} onClick={props.onToggleMic}><Icon name={props.micEnabled ? 'mic-on' : 'mic-off'} class="h-4 w-4" /></CtrlBtn>
-          <Show when={props.callState === 'video'}>
-            <CtrlBtn kind="toggle" active={props.camEnabled} onClick={props.onToggleCam}><Icon name={props.camEnabled ? 'cam-on' : 'cam-off'} class="h-4 w-4" /></CtrlBtn>
-          </Show>
-          <CtrlBtn kind="danger" onClick={props.onEndCall}>
-            <svg viewBox="0 0 24 24" fill="none" class="h-3.5 w-3.5">
-              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="rotate(135 12 12)" />
-            </svg>
-            End
-          </CtrlBtn>
-        </Show>
-      </div>
 
       {/* Messages */}
       <div ref={scrollEl} class="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
@@ -334,11 +309,6 @@ export default function ChatPane(props: {
             {/* Quick-action chips row (bottom) */}
             <div class="flex items-center gap-1.5 overflow-x-auto px-3 pb-2.5 pt-1">
               <QuickChip icon="file" label="File" onClick={() => chatFileInput?.click()} title="Send a file (IPFS)" />
-              <QuickChip icon="audio" label="Audio" onClick={props.onStartAudio} title="Start audio call" />
-              <QuickChip icon="video" label="Video" onClick={props.onStartVideo} title="Start video call" />
-              <Show when={inCall()}>
-                <QuickChip icon="end" label="End call" onClick={props.onEndCall} title="End current call" danger />
-              </Show>
               <span class="ml-auto shrink-0 pl-2 text-[10px] text-zinc-300">
                 Type <kbd class="rounded border border-zinc-200 bg-zinc-50 px-1 font-mono">/</kbd> for commands
               </span>
@@ -363,7 +333,7 @@ function SettingsBubble(props: {
   self: boolean
   text: string
   from: string
-  onSave: (gateways: string[], relays: string[]) => void
+  onSave: (gateways: string[], relays: string[], firstGateway: string, firstRelay: string) => void
 }) {
   const [editing, setEditing] = createSignal(false)
   const [gwText, setGwText] = createSignal('')
@@ -380,8 +350,9 @@ function SettingsBubble(props: {
       const rls = data.relays || []
       setGwText(gws.join('\n'))
       setRelayText(rls.join('\n'))
-      setFirstGateway(gws[0] || '')
-      setFirstRelay(rls[0] || '')
+      const saved = loadSettings()
+      setFirstGateway(saved.firstGateway || gws[0] || '')
+      setFirstRelay(saved.firstRelay || rls[0] || '')
     } catch { /* ignore */ }
   }
 
@@ -395,11 +366,11 @@ function SettingsBubble(props: {
     try {
       const gws = gateways()
       const rls = relays()
-      props.onSave(gws, rls)
+      const fg = firstGateway() || gws[0] || ''
+      const fr = firstRelay() || rls[0] || ''
+      props.onSave(gws, rls, fg, fr)
       setGwText(gws.join('\n'))
       setRelayText(rls.join('\n'))
-      setFirstGateway(gws[0] || '')
-      setFirstRelay(rls[0] || '')
       setSaveState('success')
     } catch { setSaveState('error') }
     setTimeout(() => setSaveState('idle'), 3000)
@@ -412,7 +383,7 @@ function SettingsBubble(props: {
       setRelayText(DEFAULT_RELAY_URLS.join('\n'))
       setFirstGateway(DEFAULT_GATEWAY_URLS[0])
       setFirstRelay(DEFAULT_RELAY_URLS[0])
-      props.onSave(DEFAULT_GATEWAY_URLS, DEFAULT_RELAY_URLS)
+      props.onSave(DEFAULT_GATEWAY_URLS, DEFAULT_RELAY_URLS, DEFAULT_GATEWAY_URLS[0], DEFAULT_RELAY_URLS[0])
       setResetState('success')
     } catch { setResetState('error') }
     setTimeout(() => setResetState('idle'), 3000)
@@ -504,7 +475,7 @@ function SettingsBubble(props: {
               value={gwText()}
               onInput={(e) => setGwText(e.currentTarget.value)}
               rows={4}
-              class="w-full resize-none rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 font-mono text-[10px] leading-relaxed outline-none focus:border-zinc-400 focus:bg-white"
+              class="w-full resize-none rounded-lg border border-zinc-300 bg-zinc-100 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-zinc-800 outline-none focus:border-zinc-500 focus:bg-white"
               placeholder="https://dweb.link/ipfs/"
             />
           </div>
@@ -514,7 +485,7 @@ function SettingsBubble(props: {
               value={relayText()}
               onInput={(e) => setRelayText(e.currentTarget.value)}
               rows={5}
-              class="w-full resize-none rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 font-mono text-[10px] leading-relaxed outline-none focus:border-zinc-400 focus:bg-white"
+              class="w-full resize-none rounded-lg border border-zinc-300 bg-zinc-100 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-zinc-800 outline-none focus:border-zinc-500 focus:bg-white"
               placeholder="wss://nos.lol"
             />
           </div>

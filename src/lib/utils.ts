@@ -97,7 +97,7 @@ export function shortCid(cid: string): string {
 
 export function gatewayUrl(cid: string): string {
   const settings = loadSettings()
-  const first = settings.gateways[0] || 'https://dweb.link/ipfs/'
+  const first = settings.firstGateway || settings.gateways[0] || 'https://dweb.link/ipfs/'
   const base = first.endsWith('/') ? first : first + '/'
   return base + cid
 }

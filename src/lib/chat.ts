@@ -94,23 +94,44 @@ export const DEFAULT_GATEWAY_URLS = [
 
 const SETTINGS_KEY = 'fybeam-settings'
 
-export function loadSettings(): { gateways: string[]; relays: string[] } {
+export interface SavedSettings {
+  gateways: string[]
+  relays: string[]
+  firstGateway: string
+  firstRelay: string
+}
+
+export function loadSettings(): SavedSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY)
     if (raw) {
       const parsed = JSON.parse(raw)
+      const gateways = parsed.gateways?.length ? parsed.gateways : DEFAULT_GATEWAY_URLS
+      const relays = parsed.relays?.length ? parsed.relays : DEFAULT_RELAY_URLS
       return {
-        gateways: parsed.gateways?.length ? parsed.gateways : DEFAULT_GATEWAY_URLS,
-        relays: parsed.relays?.length ? parsed.relays : DEFAULT_RELAY_URLS,
+        gateways,
+        relays,
+        firstGateway: parsed.firstGateway || gateways[0] || '',
+        firstRelay: parsed.firstRelay || relays[0] || '',
       }
     }
   } catch { /* ignore */ }
-  return { gateways: DEFAULT_GATEWAY_URLS, relays: DEFAULT_RELAY_URLS }
+  return {
+    gateways: DEFAULT_GATEWAY_URLS,
+    relays: DEFAULT_RELAY_URLS,
+    firstGateway: DEFAULT_GATEWAY_URLS[0],
+    firstRelay: DEFAULT_RELAY_URLS[0],
+  }
 }
 
-export function saveSettings(gateways: string[], relays: string[]) {
+export function saveSettings(gateways: string[], relays: string[], firstGateway?: string, firstRelay?: string) {
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ gateways, relays }))
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      gateways,
+      relays,
+      firstGateway: firstGateway || gateways[0] || '',
+      firstRelay: firstRelay || relays[0] || '',
+    }))
   } catch { /* ignore */ }
 }
 

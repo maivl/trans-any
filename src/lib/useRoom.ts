@@ -1,6 +1,6 @@
 import { onCleanup, onMount, createSignal } from 'solid-js'
 import type { Profile, ChatMessage } from '../types'
-import { createChat, type ChatController, loadSettings, saveSettings, DEFAULT_GATEWAY_URLS, DEFAULT_RELAY_URLS } from './chat'
+import { createChat, type ChatController, loadSettings, saveSettings, DEFAULT_GATEWAY_URLS, DEFAULT_RELAY_URLS, type SavedSettings } from './chat'
 import { initIpfs, getNodeId, addBytes, fetchFile, pinToNetwork } from './ipfs'
 import { generateRoomKey, exportKey, importKey, encryptBytes, decryptBytes, type CryptoKeyLike } from './crypto'
 import { log } from './debug'
@@ -491,18 +491,25 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
     pushToast(`Denied ${req?.name ?? 'joiner'}`, 'info')
   }
 
-  function handleSendSettings(gateways: string[], relays: string[]) {
-    saveSettings(gateways, relays)
-    setMessages((m) => [...m, {
-      id: randomId(),
-      peerId: controller()?.selfId ?? 'me',
-      name: profile().name,
-      color: profile().color,
-      kind: 'settings',
-      text: JSON.stringify({ gateways, relays }),
-      time: Date.now(),
-      self: true,
-    }])
+  function handleSendSettings(gateways: string[], relays: string[], firstGateway: string, firstRelay: string) {
+    saveSettings(gateways, relays, firstGateway, firstRelay)
+    const json = JSON.stringify({ gateways, relays, firstGateway, firstRelay })
+    setMessages((m) => {
+      const existing = m.find(msg => msg.kind === 'settings' && msg.self)
+      if (existing) {
+        return m.map(msg => msg.id === existing.id ? { ...msg, text: json, time: Date.now() } : msg)
+      }
+      return [...m, {
+        id: randomId(),
+        peerId: controller()?.selfId ?? 'me',
+        name: profile().name,
+        color: profile().color,
+        kind: 'settings',
+        text: json,
+        time: Date.now(),
+        self: true,
+      }]
+    })
     pushToast('Settings saved', 'success')
   }
 
