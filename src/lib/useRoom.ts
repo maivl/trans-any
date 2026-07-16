@@ -494,22 +494,16 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
   function handleSendSettings(gateways: string[], relays: string[], firstGateway: string, firstRelay: string) {
     saveSettings(gateways, relays, firstGateway, firstRelay)
     const json = JSON.stringify({ gateways, relays, firstGateway, firstRelay })
-    setMessages((m) => {
-      const existing = m.find(msg => msg.kind === 'settings' && msg.self)
-      if (existing) {
-        return m.map(msg => msg.id === existing.id ? { ...msg, text: json, time: Date.now() } : msg)
-      }
-      return [...m, {
-        id: randomId(),
-        peerId: controller()?.selfId ?? 'me',
-        name: profile().name,
-        color: profile().color,
-        kind: 'settings',
-        text: json,
-        time: Date.now(),
-        self: true,
-      }]
-    })
+    setMessages((m) => [...m, {
+      id: randomId(),
+      peerId: controller()?.selfId ?? 'me',
+      name: profile().name,
+      color: profile().color,
+      kind: 'settings',
+      text: json,
+      time: Date.now(),
+      self: true,
+    }])
     pushToast('Settings saved', 'success')
   }
 

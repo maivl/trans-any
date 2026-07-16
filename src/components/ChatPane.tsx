@@ -59,12 +59,10 @@ export default function ChatPane(props: {
   /** Slash commands — extensible. /debug opens the debug console; others are
    *  wired to the call/file actions. Add more by extending this array. */
   const slashCommands = createMemo<SlashCommand[]>(() => [
-    { cmd: 'debug', label: 'Debug console', desc: 'Open the pairing debug panel', icon: 'debug', run: () => props.setShowDebug(true) },
     { cmd: 'audio', label: 'Voice call', desc: 'Start an audio call with peers', icon: 'audio', run: () => props.onStartAudio() },
     { cmd: 'video', label: 'Video call', desc: 'Start a video call with peers', icon: 'video', run: () => props.onStartVideo() },
-    { cmd: 'file', label: 'Send file', desc: 'Attach and send a file via IPFS', icon: 'file', run: () => chatFileInput?.click() },
     { cmd: 'setting', label: 'Settings', desc: 'Configure IPFS gateways & relay nodes', icon: 'file', run: () => { const s = loadSettings(); props.onSendSettings(s.gateways, s.relays, s.firstGateway, s.firstRelay) } },
-    { cmd: 'clear', label: 'Clear debug', desc: 'Clear the debug console log', icon: 'clear', run: () => props.onClearDebug() },
+    { cmd: 'debug', label: 'Debug console', desc: 'Open the pairing debug panel', icon: 'debug', run: () => props.setShowDebug(true) },
   ])
 
   const filteredCommands = createMemo(() => {
@@ -240,11 +238,8 @@ export default function ChatPane(props: {
         <div class="relative mx-auto max-w-2xl">
           {/* Slash command menu */}
           <Show when={slashOpen()}>
-            <div class="mb-2 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
-              <div class="border-b border-zinc-100 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-                Quick commands
-              </div>
-              <div class="max-h-48 overflow-y-auto py-1">
+            <div class="mb-2 w-full backdrop-blur-sm">
+              <div class="max-h-48 overflow-y-auto">
                 <For each={filteredCommands()}>
                   {(c, i) => (
                     <button
