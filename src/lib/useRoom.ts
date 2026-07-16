@@ -491,19 +491,38 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
     pushToast(`Denied ${req?.name ?? 'joiner'}`, 'info')
   }
 
-  function handleSendSettings(gateways: string[], relays: string[], firstGateway: string, firstRelay: string) {
+  function handleSendSettings(gateways: string[], relays: string[], firstGateway: string, firstRelay: string, inPlace = false) {
     saveSettings(gateways, relays, firstGateway, firstRelay)
     const json = JSON.stringify({ gateways, relays, firstGateway, firstRelay })
-    setMessages((m) => [...m, {
-      id: randomId(),
-      peerId: controller()?.selfId ?? 'me',
-      name: profile().name,
-      color: profile().color,
-      kind: 'settings',
-      text: json,
-      time: Date.now(),
-      self: true,
-    }])
+    if (inPlace) {
+      setMessages((m) => {
+        const last = [...m].reverse().find(msg => msg.kind === 'settings' && msg.self)
+        if (last) {
+          return m.map(msg => msg.id === last.id ? { ...msg, text: json, time: Date.now() } : msg)
+        }
+        return [...m, {
+          id: randomId(),
+          peerId: controller()?.selfId ?? 'me',
+          name: profile().name,
+          color: profile().color,
+          kind: 'settings',
+          text: json,
+          time: Date.now(),
+          self: true,
+        }]
+      })
+    } else {
+      setMessages((m) => [...m, {
+        id: randomId(),
+        peerId: controller()?.selfId ?? 'me',
+        name: profile().name,
+        color: profile().color,
+        kind: 'settings',
+        text: json,
+        time: Date.now(),
+        self: true,
+      }])
+    }
     pushToast('Settings saved', 'success')
   }
 

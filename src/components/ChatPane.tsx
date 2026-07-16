@@ -30,7 +30,7 @@ export default function ChatPane(props: {
   onSendFile: (f: File) => void
   onDownload: (cid: string, name: string, size: number, from: string) => void
   onPin: (cid: string, name: string) => void
-  onSendSettings: (gateways: string[], relays: string[], firstGateway: string, firstRelay: string) => void
+  onSendSettings: (gateways: string[], relays: string[], firstGateway: string, firstRelay: string, inPlace?: boolean) => void
   showDebug: boolean
   setShowDebug: (v: boolean) => void
   debugEntries: DebugEntry[]
@@ -304,6 +304,17 @@ export default function ChatPane(props: {
             {/* Quick-action chips row (bottom) */}
             <div class="flex items-center gap-1.5 overflow-x-auto px-3 pb-2.5 pt-1">
               <QuickChip icon="file" label="File" onClick={() => chatFileInput?.click()} title="Send a file (IPFS)" />
+              <Show when={!inCall()} fallback={<></>}>
+                <QuickChip icon="audio" label="Audio" onClick={props.onStartAudio} title="Start audio call" />
+                <QuickChip icon="video" label="Video" onClick={props.onStartVideo} title="Start video call" />
+              </Show>
+              <Show when={inCall()}>
+                <QuickChip icon={props.micEnabled ? 'mic-on' : 'mic-off'} label="" onClick={props.onToggleMic} title={props.micEnabled ? 'Mute' : 'Unmute'} />
+                <Show when={props.callState === 'video'}>
+                  <QuickChip icon={props.camEnabled ? 'cam-on' : 'cam-off'} label="" onClick={props.onToggleCam} title={props.camEnabled ? 'Stop video' : 'Start video'} />
+                </Show>
+                <QuickChip icon="end" label="End" onClick={props.onEndCall} title="End call" danger />
+              </Show>
               <span class="ml-auto shrink-0 pl-2 text-[10px] text-zinc-300">
                 Type <kbd class="rounded border border-zinc-200 bg-zinc-50 px-1 font-mono">/</kbd> for commands
               </span>
@@ -328,7 +339,7 @@ function SettingsBubble(props: {
   self: boolean
   text: string
   from: string
-  onSave: (gateways: string[], relays: string[], firstGateway: string, firstRelay: string) => void
+  onSave: (gateways: string[], relays: string[], firstGateway: string, firstRelay: string, inPlace: boolean) => void
 }) {
   const [editing, setEditing] = createSignal(false)
   const [gwText, setGwText] = createSignal('')
@@ -363,7 +374,7 @@ function SettingsBubble(props: {
       const rls = relays()
       const fg = firstGateway() || gws[0] || ''
       const fr = firstRelay() || rls[0] || ''
-      props.onSave(gws, rls, fg, fr)
+      props.onSave(gws, rls, fg, fr, true)
       setGwText(gws.join('\n'))
       setRelayText(rls.join('\n'))
       setSaveState('success')
@@ -378,7 +389,7 @@ function SettingsBubble(props: {
       setRelayText(DEFAULT_RELAY_URLS.join('\n'))
       setFirstGateway(DEFAULT_GATEWAY_URLS[0])
       setFirstRelay(DEFAULT_RELAY_URLS[0])
-      props.onSave(DEFAULT_GATEWAY_URLS, DEFAULT_RELAY_URLS, DEFAULT_GATEWAY_URLS[0], DEFAULT_RELAY_URLS[0])
+      props.onSave(DEFAULT_GATEWAY_URLS, DEFAULT_RELAY_URLS, DEFAULT_GATEWAY_URLS[0], DEFAULT_RELAY_URLS[0], true)
       setResetState('success')
     } catch { setResetState('error') }
     setTimeout(() => setResetState('idle'), 3000)
@@ -535,7 +546,7 @@ function QuickChip(props: { icon: import('./icons').IconKey; label: string; onCl
       }}
     >
       <Icon name={props.icon} class="h-3.5 w-3.5" />
-      <span>{props.label}</span>
+      <Show when={props.label}><span>{props.label}</span></Show>
     </button>
   )
 }
