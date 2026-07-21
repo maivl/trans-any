@@ -26,6 +26,9 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
   /** Cache of encrypted file bytes keyed by CID, so we can re-send over WebRTC
    *  when a peer's gateway download fails. (CID → encrypted base64 string). */
   const fileCache = new Map<string, string>()
+  /** Cache of original (pre-encryption) file bytes for instant self-download.
+   *  Bypasses the entire encrypt/decrypt/WebRTC/gateway chain. */
+  const originalBytesCache = new Map<string, Uint8Array>()
   /** Incoming file-chunk buffer: CID → { total, chunks: Map<index, data> }. */
   const incomingChunks = new Map<string, { total: number; chunks: Map<number, string> }>()
   /** Pending download requests (CID → callback) for the WebRTC fallback. */
@@ -89,15 +92,8 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
           })
         },
         onMessage: (msg) => {
-          if (msg.kind === 'settings' && msg.text) {
-            try {
-              const data = JSON.parse(msg.text)
-              if (data.gateways || data.relays) {
-                saveSettings(data.gateways || DEFAULT_GATEWAY_URLS, data.relays || DEFAULT_RELAY_URLS)
-                pushToast(`Settings updated by ${msg.name}`, 'success')
-              }
-            } catch { /* ignore */ }
-          }
+          // Settings messages are local-only — never apply settings from peers.
+          if (msg.kind === 'settings') return
           setMessages((m) => [...m, { ...msg, self: msg.peerId === controller()?.selfId }])
           if (msg.kind === 'file' && msg.file && !msg.self) {
             pushToast(`${msg.name} sent a file`, 'info')
@@ -193,7 +189,7 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
             }
           }
         },
-        onFileRequest: (peerId, cid) => {
+        onFileRequest: async (peerId, cid) => {
           // A peer is requesting file bytes — send from cache via WebRTC.
           const encB64 = fileCache.get(cid)
           if (!encB64) {
@@ -203,10 +199,23 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
           log.info('file', 'responding to file request via WebRTC', { to: peerId, cid: cid.slice(0, 8) })
           // Chunk size: ~12KB per chunk (base64). Trystero data channel limit.
           const CHUNK_SIZE = 12000
+          // Send in small batches with a yield between batches so we don't
+          // flood the WebRTC SCTP send buffer. Without flow control the
+          // browser drops/delays chunks, the 10s timeout fires, and the
+          // download falls back to slow IPFS gateways.
+          const BATCH_SIZE = 20
           const total = Math.ceil(encB64.length / CHUNK_SIZE)
-          for (let i = 0; i < total; i++) {
-            const data = encB64.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE)
-            ctrl.sendFileChunk(peerId, { cid, index: i, total, data })
+          for (let i = 0; i < total; i += BATCH_SIZE) {
+            const batchEnd = Math.min(i + BATCH_SIZE, total)
+            const batch: Promise<void>[] = []
+            for (let j = i; j < batchEnd; j++) {
+              const data = encB64.slice(j * CHUNK_SIZE, (j + 1) * CHUNK_SIZE)
+              batch.push(ctrl.sendFileChunk(peerId, { cid, index: j, total, data }))
+            }
+            await Promise.all(batch)
+            // Yield to the event loop so the browser can drain the SCTP
+            // send buffer before we enqueue the next batch.
+            await new Promise((r) => setTimeout(r, 0))
           }
         },
       },
@@ -286,10 +295,11 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
         bytesToUpload = new TextEncoder().encode(encB64)
         log.info('crypto', 'file encrypted before IPFS upload', { original: rawBytes.byteLength, encrypted: bytesToUpload.byteLength })
       }
-      const cid = await addBytes(bytesToUpload, (r) => updateTransfer(tid, { progress: r * 0.7 }))
-      // Cache the encrypted bytes so we can re-send over WebRTC if a peer's
-      // gateway download fails.
+      const cid = await addBytes(bytesToUpload, (r) => updateTransfer(tid, { progress: r * 0.7 }), orderedGateways())
+      // Cache for WebRTC re-send (encrypted bytes only) and instant
+      // self-download (original bytes, regardless of encryption).
       if (encB64) fileCache.set(cid, encB64)
+      originalBytesCache.set(cid, rawBytes)
       emitSelfMessage({
         id: randomId(),
         peerId: controller()?.selfId ?? 'me',
@@ -366,16 +376,41 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
     try {
       let encB64: string | null = null
 
+      // 0) Self-download shortcut: if we have the original bytes cached (we
+      //    just sent this file), build the Blob directly — no decrypt, no
+      //    WebRTC, no gateways, no network at all.
+      const origBytes = originalBytesCache.get(cid)
+      if (origBytes) {
+        log.info('file', 'found in original bytes cache — downloading instantly', { cid: cid.slice(0, 8) })
+        updateTransfer(tid, { progress: 0.9 })
+        const blob = new Blob([origBytes])
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = name
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 2000)
+        updateTransfer(tid, { progress: 1, done: true })
+        pushToast(`Saved ${name}`, 'success')
+        return
+      }
+
       // 1) Try WebRTC first (instant if the sender is online — avoids the
       //    30-60s delay of public IPFS gateways timing out on browser-only CIDs).
       const peerIds = Object.keys(peers())
       if (peerIds.length > 0) {
-        log.info('file', 'requesting via WebRTC', { cid: cid.slice(0, 8) })
+        log.info('file', 'requesting via WebRTC', { cid: cid.slice(0, 8), size })
         encB64 = await new Promise<string | null>((resolve) => {
+          // Adaptive timeout: 10s base + 2s per MB of file size, max 60s.
+          // Small files get a quick timeout; large files get enough time for
+          // the batched flow control to complete the transfer.
+          const timeoutMs = Math.min(10000 + Math.floor(size / (1024 * 1024)) * 2000, 60000)
           const timeout = setTimeout(() => {
             pendingDownloads.delete(cid)
             resolve(null) // WebRTC timed out — fall through to gateway.
-          }, 10000)
+          }, timeoutMs)
           pendingDownloads.set(cid, (data) => {
             clearTimeout(timeout)
             pendingDownloads.delete(cid)
@@ -393,7 +428,7 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
       // 2) Fallback: public IPFS gateways (with a 15s timeout per gateway).
       if (!encB64) {
         log.info('file', 'WebRTC failed/unavailable, trying IPFS gateways', { cid: cid.slice(0, 8) })
-        const data = await fetchFile(cid, size, (r) => updateTransfer(tid, { progress: r * 0.8 }))
+        const data = await fetchFile(cid, size, (r) => updateTransfer(tid, { progress: r * 0.8 }), orderedGateways())
         encB64 = new TextDecoder().decode(data)
       }
 
@@ -427,25 +462,41 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
   async function handlePin(cid: string, name: string) {
     pushToast(`Pinning ${name} to IPFS network…`, 'info')
     try {
-      let encB64: string | null = fileCache.get(cid) ?? null
-      if (!encB64) {
+      let bytes: Uint8Array | null = null
+
+      // 0a) fileCache — has encrypted bytes as base64 (exact IPFS content).
+      const encB64 = fileCache.get(cid)
+      if (encB64) {
+        bytes = new TextEncoder().encode(encB64)
+      }
+
+      // 0b) originalBytesCache — has raw file bytes (joiner, unencrypted).
+      if (!bytes) {
+        const origBytes = originalBytesCache.get(cid)
+        if (origBytes) bytes = origBytes
+      }
+
+      // 1) Try WebRTC from a connected peer.
+      if (!bytes) {
         const peerIds = Object.keys(peers())
         if (peerIds.length > 0) {
           log.info('file', 'requesting file for pin via WebRTC', { cid: cid.slice(0, 8) })
-          encB64 = await new Promise<string | null>((resolve) => {
+          const b64 = await new Promise<string | null>((resolve) => {
             const timeout = setTimeout(() => { pendingDownloads.delete(cid); resolve(null) }, 10000)
             pendingDownloads.set(cid, (data) => { clearTimeout(timeout); pendingDownloads.delete(cid); resolve(data) })
             controller()?.sendFileRequest(peerIds[0], cid)
           })
+          if (b64) bytes = new TextEncoder().encode(b64)
         }
       }
-      let bytes: Uint8Array
-      if (encB64) {
-        bytes = new TextEncoder().encode(encB64)
-      } else {
-        const data = await fetchFile(cid, 0)
-        bytes = data
+
+      // 2) Fallback: fetch from local Helia or gateways.
+      if (!bytes) {
+        bytes = await fetchFile(cid, 0, undefined, orderedGateways())
       }
+
+      if (!bytes) throw new Error('could not obtain file bytes')
+
       const ok = await pinToNetwork(cid, bytes)
       if (ok) {
         pushToast(`${name} pinned to IPFS`, 'success')
@@ -512,7 +563,7 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
         }]
       })
     } else {
-      setMessages((m) => [...m, {
+      const msg: ChatMessage = {
         id: randomId(),
         peerId: controller()?.selfId ?? 'me',
         name: profile().name,
@@ -521,7 +572,8 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
         text: json,
         time: Date.now(),
         self: true,
-      }])
+      }
+      setMessages((m) => [...m, msg])
     }
     pushToast('Settings saved', 'success')
   }
@@ -543,6 +595,18 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
   }
 }
 
+/** Build an ordered gateway list from user settings: firstGateway first, then
+ *  the rest in configured order. Falls back to DEFAULT_GATEWAY_URLS. */
+function orderedGateways(): string[] {
+  const settings = loadSettings()
+  const gws = settings.gateways?.length ? settings.gateways : DEFAULT_GATEWAY_URLS
+  const first = settings.firstGateway || gws[0]
+  if (first && gws.length > 1 && gws[0] !== first) {
+    return [first, ...gws.filter((g) => g !== first)]
+  }
+  return gws
+}
+
 function systemMsg(peerId: string, name: string, color: string, text: string, self = false): ChatMessage {
-  return { id: randomId(), peerId, name, color, kind: 'system', text, time: Date.now(), self }
+  return { id: randomId(), peerId, name, color, kind: 'text', text, time: Date.now(), self }
 }

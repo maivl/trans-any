@@ -432,7 +432,10 @@ function SettingsBubble(props: {
                       'bg-zinc-100 dark:bg-zinc-800': firstGateway() === url,
                       'hover:bg-zinc-50 dark:hover:bg-zinc-800/50': firstGateway() !== url,
                     }}
-                    onClick={() => setFirstGateway(url)}
+                    onClick={() => {
+                      setFirstGateway(url)
+                      props.onSave(gateways(), relays(), url, firstRelay(), true)
+                    }}
                   >
                     <Show when={firstGateway() === url} fallback={<span class="h-3 w-3 shrink-0" />}>
                       <svg viewBox="0 0 24 24" fill="none" class="h-3 w-3 shrink-0 text-zinc-700 dark:text-zinc-300"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>
@@ -458,7 +461,10 @@ function SettingsBubble(props: {
                       'bg-zinc-100 dark:bg-zinc-800': firstRelay() === url,
                       'hover:bg-zinc-50 dark:hover:bg-zinc-800/50': firstRelay() !== url,
                     }}
-                    onClick={() => setFirstRelay(url)}
+                    onClick={() => {
+                      setFirstRelay(url)
+                      props.onSave(gateways(), relays(), firstGateway(), url, true)
+                    }}
                   >
                     <Show when={firstRelay() === url} fallback={<span class="h-3 w-3 shrink-0" />}>
                       <svg viewBox="0 0 24 24" fill="none" class="h-3 w-3 shrink-0 text-zinc-700 dark:text-zinc-300"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>

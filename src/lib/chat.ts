@@ -34,7 +34,7 @@ export interface ChatController {
   /** Send the E2E room key to an approved joiner (creator side). */
   sendRoomKey: (peerId: string, keyB64: string) => void
   /** Send encrypted file bytes (chunked) over the WebRTC data channel. */
-  sendFileChunk: (to: string, chunk: { cid: string; index: number; total: number; data: string }) => void
+  sendFileChunk: (to: string, chunk: { cid: string; index: number; total: number; data: string }) => Promise<void>
   /** Request file bytes from a peer over WebRTC (CID → encrypted base64). */
   sendFileRequest: (to: string, cid: string) => void
   sendSettings: (gateways: string[], relays: string[]) => void
@@ -433,8 +433,12 @@ export function createChat(
     log.info('crypto', 'sending room key', { to: peerId })
     keyAction.send({ key: keyB64 }, { target: peerId }).catch((e) => log.error('crypto', 'key send failed', e))
   }
-  const sendFileChunk = (to: string, chunk: { cid: string; index: number; total: number; data: string }) => {
-    fileChunkAction.send(chunk, { target: to }).catch((e) => log.error('file', 'chunk send failed', e))
+  const sendFileChunk = async (to: string, chunk: { cid: string; index: number; total: number; data: string }) => {
+    try {
+      await fileChunkAction.send(chunk, { target: to })
+    } catch (e) {
+      log.error('file', 'chunk send failed', e)
+    }
   }
   const sendFileRequest = (to: string, cid: string) => {
     log.info('file', 'requesting file via WebRTC', { to, cid: cid.slice(0, 8) })

@@ -50,12 +50,37 @@ export const [received, setReceived] = createSignal<ReceivedFile[]>([])
 
 export const [toasts, setToasts] = createSignal<Toast[]>([])
 
+/** Toast lookup: key = `${kind}::${text}`. Each timer is keyed by id. */
+const toastTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+/** Push a toast. If the same text+kind already exists, merge (increment
+ *  count + reset auto-dismiss timer) instead of duplicating. */
 export function pushToast(text: string, kind: Toast['kind'] = 'info') {
-  const id = Math.random().toString(36).slice(2)
-  setToasts((t) => [...t, { id, text, kind }])
-  setTimeout(() => {
-    setToasts((t) => t.filter((x) => x.id !== id))
-  }, 3600)
+  const key = `${kind}::${text}`
+
+  setToasts((t) => {
+    const existing = t.find((x) => `${x.kind}::${x.text}` === key)
+    if (existing) {
+      // Merge: increment count, reset its auto-dismiss timer.
+      const oldTimer = toastTimers.get(existing.id)
+      if (oldTimer) clearTimeout(oldTimer)
+      const newTimer = setTimeout(() => {
+        setToasts((t2) => t2.filter((x) => x.id !== existing.id))
+        toastTimers.delete(existing.id)
+      }, 3600)
+      toastTimers.set(existing.id, newTimer)
+      return t.map((x) => (x.id === existing.id ? { ...x, count: x.count + 1 } : x))
+    }
+
+    // New toast.
+    const id = Math.random().toString(36).slice(2)
+    const timer = setTimeout(() => {
+      setToasts((t2) => t2.filter((x) => x.id !== id))
+      toastTimers.delete(id)
+    }, 3600)
+    toastTimers.set(id, timer)
+    return [...t, { id, text, kind, count: 1 }]
+  })
 }
 
 export function addTransfer(t: Transfer) {

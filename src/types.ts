@@ -52,6 +52,8 @@ export interface Toast {
   id: string
   text: string
   kind: 'info' | 'success' | 'error'
+  /** How many identical messages have been merged. */
+  count: number
 }
 
 /** A file transfer shown in the sidebar TRANSFERS section. */
