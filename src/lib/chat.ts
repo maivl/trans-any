@@ -86,6 +86,8 @@ export const DEFAULT_RELAY_URLS = [
 ]
 
 export const DEFAULT_GATEWAY_URLS = [
+  'https://ipfs.greyh.at/ipfs/',
+  'https://ninetailed.ninja/ipfs/',
   'https://dweb.link/ipfs/',
   'https://ipfs.io/ipfs/',
   'https://cloudflare-ipfs.com/ipfs/',

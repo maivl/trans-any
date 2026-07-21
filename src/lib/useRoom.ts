@@ -497,7 +497,7 @@ export function useRoom(profile: () => Profile, isCreator: () => boolean) {
 
       if (!bytes) throw new Error('could not obtain file bytes')
 
-      const ok = await pinToNetwork(cid, bytes)
+      const ok = await pinToNetwork(cid, bytes, undefined, orderedGateways())
       if (ok) {
         pushToast(`${name} pinned to IPFS`, 'success')
       } else {

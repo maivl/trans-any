@@ -39,6 +39,8 @@ export async function getNodeId(): Promise<string> {
  * an optional `gateways` parameter; when omitted these defaults are used.
  */
 const DEFAULT_GATEWAYS = [
+  'https://ipfs.greyh.at/ipfs/',
+  'https://ninetailed.ninja/ipfs/',
   'https://dweb.link/ipfs/',
   'https://ipfs.io/ipfs/',
   'https://cloudflare-ipfs.com/ipfs/',
@@ -211,6 +213,10 @@ export async function stopIpfs() {
  * Pin a file to the local Helia blockstore. This prevents the browser's IPFS
  * garbage collector from evicting the data while this tab is open.
  *
+ * After local pinning, the function also asks public IPFS gateways to fetch
+ * and cache the data (via a GET request), so the file becomes reachable through
+ * the gateway URL. This is the same "warm-up" mechanism used by addBytes.
+ *
  * NOTE: True network-wide IPFS pinning (keeping data available for other peers
  * after this tab closes) is NOT possible from a browser environment. Public
  * IPFS gateways (dweb.link, ipfs.io, etc.) do NOT accept PUT pinning requests
@@ -219,12 +225,15 @@ export async function stopIpfs() {
  * For persistent network pinning, use a dedicated pinning service (Pinata,
  * web3.storage, Filecoin) from a server-side client.
  *
+ * @param gateways - Optional user-configured gateway list. If omitted, uses
+ *   DEFAULT_GATEWAYS. The first entry is tried first.
  * Returns true if the local Helia pin succeeded.
  */
 export async function pinToNetwork(
   cidStr: string,
   bytes: Uint8Array,
   onProgress?: (ratio: number) => void,
+  gateways?: string[],
 ): Promise<boolean> {
   onProgress?.(0)
   onProgress?.(0.3)
@@ -240,6 +249,8 @@ export async function pinToNetwork(
       // Pin it so the GC won't evict these blocks.
       for await (const _ of node.pins.add(addedCid)) { /* consume */ }
       log.info('ipfs', 'pinned locally via Helia', { cid: cidStr.slice(0, 10) })
+      // Warm up public gateways so the file is reachable via gateway URLs.
+      publishToGateway(cidStr, bytes, gateways).catch(() => {})
       onProgress?.(1)
       return true
     } else {
@@ -259,6 +270,8 @@ export async function pinToNetwork(
     // Check if blocks exist locally by attempting to resolve the CID.
     for await (const _ of node.pins.add(cid)) { /* consume */ }
     log.info('ipfs', 'pinned existing CID locally', { cid: cidStr.slice(0, 10) })
+    // Warm up public gateways so the file is reachable via gateway URLs.
+    publishToGateway(cidStr, bytes, gateways).catch(() => {})
     onProgress?.(1)
     return true
   } catch {
